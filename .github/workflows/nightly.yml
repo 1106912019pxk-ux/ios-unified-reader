@@ -10,6 +10,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: build-aidoku-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: macos-26
@@ -27,7 +31,10 @@ jobs:
         id: commitinfo
         run: echo "::set-output name=sha_short::$(git rev-parse --short HEAD)"
       - name: Build
-        run: xcodebuild -scheme "Aidoku (iOS)" -configuration Release archive -archivePath build/Aidoku.xcarchive -skipPackagePluginValidation CODE_SIGN_IDENTITY= CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+        run: |
+          set -o pipefail
+          mkdir -p build
+          xcodebuild -scheme "Aidoku (iOS)" -configuration Release archive -archivePath build/Aidoku.xcarchive -skipPackagePluginValidation CODE_SIGN_IDENTITY= CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/xcodebuild.log
       - name: Package ipa
         run: |
           mkdir Payload
@@ -50,3 +57,20 @@ jobs:
           name: Aidoku-iOS_nightly-${{ steps.commitinfo.outputs.sha_short }}.ipa
           path: Aidoku-iOS_nightly-${{ steps.commitinfo.outputs.sha_short }}.ipa
           if-no-files-found: error
+      - name: Publish failure diagnostics
+        if: failure()
+        run: |
+          mkdir -p release/aidoku
+          {
+            echo "Aidoku build failed at commit $GITHUB_SHA"
+            if [ -f build/xcodebuild.log ]; then
+              tail -n 500 build/xcodebuild.log
+            else
+              echo "xcodebuild.log was not created; failure happened before compilation."
+            fi
+          } > release/aidoku/build-failure.log
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f release/aidoku/build-failure.log
+          git commit -m "build(aidoku): publish failure diagnostics"
+          git push

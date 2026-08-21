@@ -319,21 +319,8 @@ struct MangaDetailsHeaderView: View {
 
                     if row.label == "作者", let source {
                         ForEach(PicaDetailMetadata.authorNames(in: value), id: \.self) { author in
-                            Button {
+                            SelectableAuthorTextView(text: author) {
                                 openAuthorSearch(author, source: source)
-                            } label: {
-                                Text(author)
-                                    .foregroundStyle(.tint)
-                                    .underline()
-                                    .multilineTextAlignment(.leading)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .buttonStyle(.borderless)
-                            .contextMenu {
-                                Button(NSLocalizedString("COPY")) {
-                                    UIPasteboard.general.string = author
-                                }
                             }
                         }
                     } else {
@@ -762,6 +749,77 @@ private struct SelectableTextView: UIViewRepresentable {
             CGSize(width: width, height: UIView.layoutFittingExpandedSize.height)
         )
         return CGSize(width: width, height: ceil(size.height))
+    }
+}
+
+private struct SelectableAuthorTextView: UIViewRepresentable {
+    let text: String
+    let onTap: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onTap: onTap)
+    }
+
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.backgroundColor = .clear
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isScrollEnabled = false
+        textView.textContainerInset = .zero
+        textView.textContainer.lineFragmentPadding = 0
+        textView.adjustsFontForContentSizeCategory = true
+        textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        textView.setContentHuggingPriority(.required, for: .vertical)
+
+        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.didTap(_:)))
+        tapGesture.cancelsTouchesInView = false
+        textView.addGestureRecognizer(tapGesture)
+        context.coordinator.textView = textView
+        return textView
+    }
+
+    func updateUIView(_ textView: UITextView, context: Context) {
+        context.coordinator.onTap = onTap
+        guard context.coordinator.renderedText != text else { return }
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.preferredFont(forTextStyle: .subheadline),
+            .foregroundColor: textView.tintColor ?? UIColor.systemBlue,
+            .underlineStyle: NSUnderlineStyle.single.rawValue
+        ]
+        textView.attributedText = NSAttributedString(string: text, attributes: attributes)
+        context.coordinator.renderedText = text
+        textView.accessibilityTraits.insert(.link)
+    }
+
+    @available(iOS 16.0, *)
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        guard let width = proposal.width else { return nil }
+        let size = uiView.sizeThatFits(
+            CGSize(width: width, height: UIView.layoutFittingExpandedSize.height)
+        )
+        return CGSize(width: width, height: ceil(size.height))
+    }
+
+    final class Coordinator: NSObject {
+        weak var textView: UITextView?
+        var onTap: () -> Void
+        var renderedText: String?
+
+        init(onTap: @escaping () -> Void) {
+            self.onTap = onTap
+        }
+
+        @objc func didTap(_ gesture: UITapGestureRecognizer) {
+            guard
+                gesture.state == .ended,
+                textView?.selectedRange.length == 0
+            else {
+                return
+            }
+            onTap()
+        }
     }
 }
 

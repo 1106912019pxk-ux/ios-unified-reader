@@ -53,6 +53,10 @@ struct MangaDetailsHeaderView: View {
     @State private var picaFavouriteOverride: Bool?
     @State private var picaFavouriteError = ""
     @State private var showPicaFavouriteError = false
+    @State private var ehentaiFavouriteLoading = false
+    @State private var ehentaiFavouriteState: Bool?
+    @State private var ehentaiFavouriteError = ""
+    @State private var showEHentaiFavouriteError = false
 
     static let coverWidth: CGFloat = 114
 
@@ -254,9 +258,16 @@ struct MangaDetailsHeaderView: View {
                 mangaId: manga.key
             )
         }
-        .task {
+        .task(id: "\(manga.sourceKey)|\(manga.key)|\(source != nil)|\(initialDataLoaded)") {
             updateReadButtonText()
             hasAvailableTrackers = await TrackerManager.shared.hasAvailableTrackers(sourceKey: manga.sourceKey, mangaKey: manga.key)
+            if isEHentaiSource, initialDataLoaded {
+                if let detailState = ehentaiFavouriteStateFromDetails {
+                    ehentaiFavouriteState = detailState
+                } else {
+                    await refreshEHentaiFavouriteState()
+                }
+            }
         }
     }
 
@@ -472,6 +483,28 @@ struct MangaDetailsHeaderView: View {
                     Text(picaFavouriteError)
                 }
             }
+
+            if isEHentaiSource, source != nil {
+                Button {
+                    Task {
+                        await toggleEHentaiFavourite()
+                    }
+                } label: {
+                    if ehentaiFavouriteLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: ehentaiFavouriteState == true ? "heart.fill" : "heart")
+                    }
+                }
+                .buttonStyle(MangaActionButtonStyle(selected: ehentaiFavouriteState == true))
+                .disabled(ehentaiFavouriteLoading || !initialDataLoaded)
+                .alert("E-Hentai 收藏", isPresented: $showEHentaiFavouriteError) {
+                    Button(NSLocalizedString("OK"), role: .cancel) {}
+                } message: {
+                    Text(ehentaiFavouriteError)
+                }
+            }
         }
     }
 
@@ -523,6 +556,117 @@ struct MangaDetailsHeaderView: View {
         source?.id == PicaDetailMetadata.sourceKey
             || source?.key == PicaDetailMetadata.sourceKey
             || manga.sourceKey == PicaDetailMetadata.sourceKey
+    }
+
+    var isEHentaiSource: Bool {
+        let sourceKey = "multi.ehentai"
+        return source?.id == sourceKey
+            || source?.key == sourceKey
+            || manga.sourceKey == sourceKey
+    }
+
+    var ehentaiFavouriteStateFromDetails: Bool? {
+        guard let description = manga.description else { return nil }
+        let prefix = "Account Favorite:"
+        guard let line = description
+            .split(separator: "\n")
+            .map({ String($0).trimmingCharacters(in: .whitespaces) })
+            .first(where: { $0.hasPrefix(prefix) })
+        else {
+            return nil
+        }
+
+        switch String(line.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces) {
+            case "Favorited":
+                return true
+            case "Not Favorited":
+                return false
+            default:
+                return nil
+        }
+    }
+
+    @MainActor
+    func refreshEHentaiFavouriteState(showError: Bool = false) async {
+        guard !ehentaiFavouriteLoading else { return }
+        ehentaiFavouriteLoading = true
+        defer { ehentaiFavouriteLoading = false }
+
+        do {
+            ehentaiFavouriteState = try await performEHentaiFavouriteNotification(
+                "ehentai.favourite.status:\(manga.key)"
+            )
+        } catch {
+            ehentaiFavouriteState = nil
+            if showError {
+                ehentaiFavouriteError = error.localizedDescription
+                showEHentaiFavouriteError = true
+            }
+        }
+    }
+
+    @MainActor
+    func toggleEHentaiFavourite() async {
+        guard !ehentaiFavouriteLoading else { return }
+        ehentaiFavouriteLoading = true
+        defer { ehentaiFavouriteLoading = false }
+
+        do {
+            let currentState: Bool
+            if let ehentaiFavouriteState {
+                currentState = ehentaiFavouriteState
+            } else {
+                currentState = try await performEHentaiFavouriteNotification(
+                    "ehentai.favourite.status:\(manga.key)"
+                )
+            }
+
+            let action = currentState ? "remove" : "add"
+            ehentaiFavouriteState = try await performEHentaiFavouriteNotification(
+                "ehentai.favourite.set:\(action):\(manga.key)"
+            )
+        } catch {
+            ehentaiFavouriteError = error.localizedDescription
+            showEHentaiFavouriteError = true
+        }
+    }
+
+    @MainActor
+    func performEHentaiFavouriteNotification(_ notification: String) async throws -> Bool {
+        let sourceKey = "multi.ehentai"
+        guard
+            let source,
+            source.id == sourceKey || source.key == sourceKey
+        else {
+            throw EHentaiFavouriteError.invalidSource
+        }
+
+        let mangaId = manga.key
+        let resultKey = "\(sourceKey).favouriteActionResult"
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: resultKey)
+        defer { defaults.removeObject(forKey: resultKey) }
+
+        try await source.handleNotification(notification: notification)
+        guard let result = defaults.string(forKey: resultKey) else {
+            throw EHentaiFavouriteError.missingResult
+        }
+        let fields = result.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false)
+        guard fields.count == 3, String(fields[1]) == mangaId else {
+            throw EHentaiFavouriteError.invalidResult
+        }
+        if fields[0] == "error" {
+            throw EHentaiFavouriteError.remote(String(fields[2]))
+        }
+
+        switch fields[2] {
+            case "favourite":
+                return true
+            case "un_favourite":
+                return false
+            default:
+                throw EHentaiFavouriteError.invalidResult
+        }
     }
 
     @MainActor
@@ -838,6 +982,26 @@ private enum PicaFavouriteError: LocalizedError {
                 "哔咔收藏返回了无法识别的状态。"
             case .remote(let message):
                 "哔咔收藏操作失败：\(message)"
+        }
+    }
+}
+
+private enum EHentaiFavouriteError: LocalizedError {
+    case invalidSource
+    case missingResult
+    case invalidResult
+    case remote(String)
+
+    var errorDescription: String? {
+        switch self {
+            case .invalidSource:
+                "当前来源不是 E-Hentai。"
+            case .missingResult:
+                "没有收到 E-Hentai 收藏操作结果。"
+            case .invalidResult:
+                "E-Hentai 收藏返回了无法识别的状态。"
+            case .remote(let message):
+                "E-Hentai 收藏操作失败：\(message)"
         }
     }
 }

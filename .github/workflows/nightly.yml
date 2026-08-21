@@ -1,6 +1,9 @@
 name: Build and upload nightly ipa
 
 on:
+  push:
+    branches:
+      - feature/ebook-reader
   workflow_dispatch:
 
 jobs:

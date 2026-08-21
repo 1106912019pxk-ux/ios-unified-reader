@@ -88,9 +88,6 @@ struct HomeGridView: View {
             loadMoreView
         }
         .padding([.horizontal, .bottom])
-        .onChange(of: entries) { _ in
-            loadingMore = false
-        }
         .onReceive(NotificationCenter.default.publisher(for: .orientationDidChange)) { _ in
             columns = Self.getColumns()
         }
@@ -177,6 +174,7 @@ struct HomeGridView: View {
                     loadingMore = true
                     Task {
                         await loadMore()
+                        loadingMore = false
                     }
                 }
         } else {
@@ -194,3 +192,4 @@ struct HomeGridView: View {
         .padding([.horizontal, .bottom])
     }
 }
+

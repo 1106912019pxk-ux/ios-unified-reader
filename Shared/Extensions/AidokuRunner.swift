@@ -6,7 +6,6 @@
 //
 
 import AidokuRunner
-import CFNetwork
 import Foundation
 import Network
 import Security
@@ -91,9 +90,9 @@ private actor PicaRoutedSession {
             let port = try await PicaTunnelProxy.shared.start()
             let configuration = URLSessionConfiguration.default
             configuration.connectionProxyDictionary = [
-                kCFNetworkProxiesHTTPSEnable as String: true,
-                kCFNetworkProxiesHTTPSProxy as String: "127.0.0.1",
-                kCFNetworkProxiesHTTPSPort as String: Int(port)
+                "HTTPSEnable": true,
+                "HTTPSProxy": "127.0.0.1",
+                "HTTPSPort": Int(port)
             ]
             configuration.httpMaximumConnectionsPerHost = 6
             configuration.timeoutIntervalForRequest = 30
@@ -239,7 +238,7 @@ private final class PicaProxyTunnel: @unchecked Sendable {
 
             Task {
                 let targetHost = await PicaChannelResolver.shared.targetHost(for: authority.host)
-                queue.async {
+                self.queue.async {
                     self.connectRemote(
                         targetHost: targetHost,
                         originalHost: authority.host,

@@ -49,6 +49,10 @@ struct MangaDetailsHeaderView: View {
     @State private var isTracking = false
     @State private var hasAvailableTrackers = false
     @State private var showLibraryRemoveConfirm = false
+    @State private var picaFavouriteLoading = false
+    @State private var picaFavouriteOverride: Bool?
+    @State private var picaFavouriteError = ""
+    @State private var showPicaFavouriteError = false
 
     static let coverWidth: CGFloat = 114
 
@@ -136,51 +140,44 @@ struct MangaDetailsHeaderView: View {
                         .padding(.bottom, 4)
 
                     if let authors = manga.authors, !authors.isEmpty {
-                        let label = Text(authors.joined(separator: ", "))
-                            .lineLimit(1)
-                            .foregroundStyle(.secondary)
-                            .font(.callout)
-                            .padding(.bottom, 6)
-                            .textSelection(.enabled)
-                            .transition(.opacity)
-
-                        if let source, source.supportsAuthorSearch {
-                            Button {
-                                // we'll need a better ui in the future for different author selection
-                                guard let author = authors.first else { return }
-
-                                let viewController = MangaListViewController(source: source, title: author)
-                                viewController.getEntries = { page in
-                                    try await source.getSearchMangaList(query: nil, page: page, filters: [
-                                        .text(id: "author", value: author)
-                                    ])
-                                }
-                                path.push(viewController)
-                            } label: {
-                                label
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(authors, id: \.self) { author in
+                                authorView(author)
                             }
-                            .buttonStyle(.borderless)
-                        } else {
-                            label
                         }
+                        .padding(.bottom, 6)
+                        .transition(.opacity)
                     }
 
                     labelsView
 
                     buttonsView
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(height: 174)
+            .frame(minHeight: 174)
             .padding(.bottom, 14)
             .padding(.horizontal, 20)
 
             if let description = manga.description, !description.isEmpty {
-                ExpandableTextView(text: description, expanded: $descriptionExpanded)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.bottom, 12)
-                    .padding(.horizontal, 20)
-                    .foregroundStyle(.secondary)
+                if isPicaSource,
+                   let metadata = PicaDetailMetadata(description: description)
+                {
+                    if let summary = metadata.summary {
+                        SelectableTextView(text: summary, font: .preferredFont(forTextStyle: .subheadline))
+                            .padding(.bottom, 12)
+                            .padding(.horizontal, 20)
+                    }
+                    picaMetadataView(metadata)
+                } else {
+                    ExpandableTextView(text: description, expanded: $descriptionExpanded)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, 12)
+                        .padding(.horizontal, 20)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             tagsView
@@ -233,6 +230,9 @@ struct MangaDetailsHeaderView: View {
         .onChange(of: manga) { _ in
             animationTrigger.toggle()
         }
+        .onChange(of: manga.key) { _ in
+            picaFavouriteOverride = nil
+        }
         .onChange(of: nextChapter) { _ in
             updateReadButtonText()
         }
@@ -258,6 +258,81 @@ struct MangaDetailsHeaderView: View {
             updateReadButtonText()
             hasAvailableTrackers = await TrackerManager.shared.hasAvailableTrackers(sourceKey: manga.sourceKey, mangaKey: manga.key)
         }
+    }
+
+    @ViewBuilder
+    func authorView(_ author: String) -> some View {
+        let label = Text(author)
+            .lineLimit(2)
+            .foregroundStyle(isPicaSource ? Color.accentColor : Color.secondary)
+            .font(.callout)
+            .underline(isPicaSource)
+
+        if let source, source.supportsAuthorSearch || isPicaSource {
+            Button {
+                openAuthorSearch(author, source: source)
+            } label: {
+                label
+            }
+            .buttonStyle(.borderless)
+            .contextMenu {
+                Button(NSLocalizedString("COPY")) {
+                    UIPasteboard.general.string = author
+                }
+            }
+        } else {
+            label
+                .contextMenu {
+                    Button(NSLocalizedString("COPY")) {
+                        UIPasteboard.general.string = author
+                    }
+                }
+        }
+    }
+
+    func openAuthorSearch(_ author: String, source: AidokuRunner.Source) {
+        let viewController = MangaListViewController(source: source, title: author)
+        viewController.getEntries = { page in
+            if source.id == PicaDetailMetadata.sourceKey || source.key == PicaDetailMetadata.sourceKey {
+                try await source.getSearchMangaList(query: author, page: page, filters: [])
+            } else {
+                try await source.getSearchMangaList(query: nil, page: page, filters: [
+                    .text(id: "author", value: author)
+                ])
+            }
+        }
+        path.push(viewController)
+    }
+
+    @ViewBuilder
+    private func picaMetadataView(_ metadata: PicaDetailMetadata) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(Array(metadata.rows.enumerated()), id: \.offset) { _, row in
+                let value = if row.label == "哔咔收藏", let picaFavouriteOverride {
+                    picaFavouriteOverride ? "已收藏" : "未收藏"
+                } else {
+                    row.value
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(row.label)：")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+
+                    if row.label == "作者", let source {
+                        ForEach(PicaDetailMetadata.authorNames(in: value), id: \.self) { author in
+                            SelectableAuthorTextView(text: author) {
+                                openAuthorSearch(author, source: source)
+                            }
+                        }
+                    } else {
+                        SelectableTextView(text: value, font: .preferredFont(forTextStyle: .subheadline))
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 14)
     }
 
     @ViewBuilder
@@ -375,6 +450,28 @@ struct MangaDetailsHeaderView: View {
                     Text(NSLocalizedString("LINK_COPIED_TEXT"))
                 }
             }
+
+            if isPicaSource, source != nil {
+                Button {
+                    Task {
+                        await togglePicaFavourite()
+                    }
+                } label: {
+                    if picaFavouriteLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: picaFavouriteState ? "heart.fill" : "heart")
+                    }
+                }
+                .buttonStyle(MangaActionButtonStyle(selected: picaFavouriteState))
+                .disabled(picaFavouriteLoading || !initialDataLoaded)
+                .alert("哔咔收藏", isPresented: $showPicaFavouriteError) {
+                    Button(NSLocalizedString("OK"), role: .cancel) {}
+                } message: {
+                    Text(picaFavouriteError)
+                }
+            }
         }
     }
 
@@ -405,6 +502,81 @@ struct MangaDetailsHeaderView: View {
                 .padding(.horizontal, 20)
             }
             .padding(.bottom, 16)
+        }
+    }
+
+    var picaFavouriteState: Bool {
+        if let picaFavouriteOverride {
+            return picaFavouriteOverride
+        }
+        guard
+            let description = manga.description,
+            let metadata = PicaDetailMetadata(description: description),
+            let value = metadata.rows.first(where: { $0.label == "哔咔收藏" })?.value
+        else {
+            return false
+        }
+        return value == "已收藏"
+    }
+
+    var isPicaSource: Bool {
+        source?.id == PicaDetailMetadata.sourceKey
+            || source?.key == PicaDetailMetadata.sourceKey
+            || manga.sourceKey == PicaDetailMetadata.sourceKey
+    }
+
+    @MainActor
+    func togglePicaFavourite() async {
+        guard
+            let source,
+            source.id == PicaDetailMetadata.sourceKey || source.key == PicaDetailMetadata.sourceKey
+        else {
+            return
+        }
+        let mangaId = manga.key
+        let resultKey = "\(PicaDetailMetadata.sourceKey).favouriteActionResult"
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: resultKey)
+        picaFavouriteLoading = true
+        defer {
+            picaFavouriteLoading = false
+            defaults.removeObject(forKey: resultKey)
+        }
+
+        do {
+            try await source.handleNotification(notification: "pica.favourite.toggle:\(mangaId)")
+            guard let result = defaults.string(forKey: resultKey) else {
+                throw PicaFavouriteError.missingResult
+            }
+            let fields = result.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false)
+            guard fields.count == 3, String(fields[1]) == mangaId else {
+                throw PicaFavouriteError.invalidResult
+            }
+            if fields[0] == "error" {
+                throw PicaFavouriteError.remote(String(fields[2]))
+            }
+
+            let isFavourite: Bool
+            switch fields[2] {
+                case "favourite":
+                    isFavourite = true
+                case "un_favourite":
+                    isFavourite = false
+                default:
+                    throw PicaFavouriteError.invalidResult
+            }
+            picaFavouriteOverride = isFavourite
+
+            if let updatedManga = try? await source.getMangaUpdate(
+                manga: manga,
+                needsDetails: true,
+                needsChapters: false
+            ) {
+                manga = updatedManga
+            }
+        } catch {
+            picaFavouriteError = error.localizedDescription
+            showPicaFavouriteError = true
         }
     }
 
@@ -505,6 +677,171 @@ struct LabelView: View {
     }
 }
 
+private struct PicaDetailMetadata {
+    static let sourceKey = "zh.picacomic"
+    private static let marker = "──── 漫画信息 ────"
+
+    struct Row: Hashable {
+        let label: String
+        let value: String
+    }
+
+    let summary: String?
+    let rows: [Row]
+
+    static func authorNames(in value: String) -> [String] {
+        value
+            .components(separatedBy: CharacterSet(charactersIn: "\n,，/／"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    init?(description: String) {
+        guard let markerRange = description.range(of: Self.marker) else { return nil }
+
+        let summary = String(description[..<markerRange.lowerBound])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        self.summary = summary.isEmpty ? nil : summary
+        rows = description[markerRange.upperBound...]
+            .split(whereSeparator: { $0.isNewline })
+            .compactMap { line in
+                let line = String(line).trimmingCharacters(in: .whitespaces)
+                guard
+                    !line.isEmpty,
+                    let separator = line.firstIndex(of: "：")
+                else {
+                    return nil
+                }
+                let label = line[..<separator].trimmingCharacters(in: .whitespaces)
+                let value = line[line.index(after: separator)...].trimmingCharacters(in: .whitespaces)
+                guard !label.isEmpty, !value.isEmpty else { return nil }
+                return Row(label: label, value: value)
+            }
+    }
+}
+
+private struct SelectableTextView: UIViewRepresentable {
+    let text: String
+    let font: UIFont
+
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.backgroundColor = .clear
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isScrollEnabled = false
+        textView.textContainerInset = .zero
+        textView.textContainer.lineFragmentPadding = 0
+        textView.adjustsFontForContentSizeCategory = true
+        textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        textView.setContentHuggingPriority(.required, for: .vertical)
+        return textView
+    }
+
+    func updateUIView(_ textView: UITextView, context: Context) {
+        textView.text = text
+        textView.font = font
+        textView.textColor = .secondaryLabel
+    }
+
+    @available(iOS 16.0, *)
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        guard let width = proposal.width else { return nil }
+        let size = uiView.sizeThatFits(
+            CGSize(width: width, height: UIView.layoutFittingExpandedSize.height)
+        )
+        return CGSize(width: width, height: ceil(size.height))
+    }
+}
+
+private struct SelectableAuthorTextView: UIViewRepresentable {
+    let text: String
+    let onTap: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onTap: onTap)
+    }
+
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.backgroundColor = .clear
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isScrollEnabled = false
+        textView.textContainerInset = .zero
+        textView.textContainer.lineFragmentPadding = 0
+        textView.adjustsFontForContentSizeCategory = true
+        textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        textView.setContentHuggingPriority(.required, for: .vertical)
+
+        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.didTap(_:)))
+        tapGesture.cancelsTouchesInView = false
+        textView.addGestureRecognizer(tapGesture)
+        context.coordinator.textView = textView
+        return textView
+    }
+
+    func updateUIView(_ textView: UITextView, context: Context) {
+        context.coordinator.onTap = onTap
+        guard context.coordinator.renderedText != text else { return }
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.preferredFont(forTextStyle: .subheadline),
+            .foregroundColor: textView.tintColor ?? UIColor.systemBlue,
+            .underlineStyle: NSUnderlineStyle.single.rawValue
+        ]
+        textView.attributedText = NSAttributedString(string: text, attributes: attributes)
+        context.coordinator.renderedText = text
+        textView.accessibilityTraits.insert(.link)
+    }
+
+    @available(iOS 16.0, *)
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        guard let width = proposal.width else { return nil }
+        let size = uiView.sizeThatFits(
+            CGSize(width: width, height: UIView.layoutFittingExpandedSize.height)
+        )
+        return CGSize(width: width, height: ceil(size.height))
+    }
+
+    final class Coordinator: NSObject {
+        weak var textView: UITextView?
+        var onTap: () -> Void
+        var renderedText: String?
+
+        init(onTap: @escaping () -> Void) {
+            self.onTap = onTap
+        }
+
+        @objc func didTap(_ gesture: UITapGestureRecognizer) {
+            guard
+                gesture.state == .ended,
+                textView?.selectedRange.length == 0
+            else {
+                return
+            }
+            onTap()
+        }
+    }
+}
+
+private enum PicaFavouriteError: LocalizedError {
+    case missingResult
+    case invalidResult
+    case remote(String)
+
+    var errorDescription: String? {
+        switch self {
+            case .missingResult:
+                "没有收到哔咔收藏操作结果。"
+            case .invalidResult:
+                "哔咔收藏返回了无法识别的状态。"
+            case .remote(let message):
+                "哔咔收藏操作失败：\(message)"
+        }
+    }
+}
+
 private struct TagView: View {
     let text: String
 
@@ -582,3 +919,4 @@ private struct MangaActionButtonStyle: ButtonStyle {
         hasOtherDownloads: false,
     )
 }
+

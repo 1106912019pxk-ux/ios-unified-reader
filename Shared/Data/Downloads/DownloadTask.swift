@@ -380,7 +380,7 @@ extension DownloadTask {
     private func fetchPageData(for urlRequest: URLRequest, tmpDirectory: URL) async -> (Data, URLResponse)? {
         var attempt = 0
         while true {
-            let result = try? await URLSession.shared.data(for: urlRequest)
+            let result = try? await PicaNetworkRouting.data(for: urlRequest)
 
             // response was okay, bail out
             if let result, self.isSuccessResponse(result.1) {
@@ -479,7 +479,7 @@ extension DownloadTask {
                     let source = SourceManager.shared.source(for: download.chapterIdentifier.sourceKey)
                 {
                     let request = await source.getModifiedImageRequest(url: coverUrl, context: nil)
-                    let result = try? await URLSession.shared.data(for: request)
+                    let result = try? await PicaNetworkRouting.data(for: request)
                     if let data = result?.0, self.isSuccessResponse(result?.1) {
                         try? data.write(to: coverPath)
                     }

@@ -1,6 +1,6 @@
 # iOS Unified Reader 任务清单
 
-更新时间：2026-08-21
+更新时间：2026-08-22
 
 ## 当前状态
 
@@ -9,7 +9,7 @@
 - 独立 Git：已初始化，默认分支 `main`。
 - GitHub 仓库：已创建，`1106912019pxk-ux/ios-unified-reader`（私有）。
 - 上游源码：已导入完整历史，基线 `45fe8231a8da58f70f5f2e152a039fcb49eab4cb`。
-- IPA：未构建。
+- IPA：首个可安装基线已完成真机验证；当前包含已确认的 PICA 宿主网络与详情交互适配。该适配只编入 IPA，不构建或内置 PICA AIX。
 
 ## 已完成
 
@@ -30,10 +30,12 @@
 - [x] 确认仓库为 `1106912019pxk-ux/ios-unified-reader`、私有、默认分支 `main`。
 - [x] 创建 GitHub 私有仓库，并设置 `origin` 与 `upstream` 分离。
 - [x] 导入 Aidoku 完整 Git 历史并固定首个上游基线。
+- [x] 建立独立私有来源仓库 `1106912019pxk-ux/ios-unified-reader-sources`，保留 Aidoku Community Sources 完整历史。
+- [x] 确认三个来源以独立 `.aix` 文件交付，由用户按需手动导入，不内置进 IPA。
+- [ ] 真机对比 Pica 系统 DNS 与专用线路的首页、详情和阅读首图耗时；专用线路必须保持原域名 TLS 校验并与网页浏览隔离。
 
 ## 等待用户确认
 
-- [ ] 最新表述中的“APK 扩展”是指 Android APK 直接运行，还是 Aidoku `.aix` 来源包。
 - [ ] “在线播放”是在线阅读，还是视频/音频播放。
 - [ ] 局域网主要协议：WebDAV、OPDS、HTTP、SMB、Komga 或 Kavita。
 
@@ -42,9 +44,10 @@
 - [x] 确认仓库名、所有者、公开性、默认分支和初始推送范围。
 - [x] 初始化独立 Git 并创建独立 GitHub 仓库。
 - [x] 固定上游基线并保留许可证/第三方声明。
-- [ ] 建立 `CustomSources/`，导入并固定三份 Apache-2.0 Aidoku 来源。
-- [ ] 建立旧 JAR 功能到新来源/宿主的逐项迁移清单。
+- [x] 建立独立来源仓库，导入并固定三份 Apache-2.0 Aidoku 来源。
+- [x] 建立旧 JAR 功能到新来源/宿主的逐项迁移清单。
 - [ ] 为 Picacomic 实现真正的详情页网络收藏按钮，不再使用特殊章节。
 - [ ] 建立无签名 IPA 的 GitHub Actions 工作流。
 - [ ] 生成第一个可自签安装的 V0 IPA。
 - [ ] 完成三份重点来源与 EPUB/CBZ 的真机验收。
+

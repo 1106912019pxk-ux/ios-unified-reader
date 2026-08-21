@@ -235,10 +235,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         DataLoader.sharedUrlCache.diskCapacity = 0
 
         let pipeline = ImagePipeline(delegate: self) {
-            let dataLoader: DataLoader = {
+            let dataLoader: any DataLoading = {
                 let config = URLSessionConfiguration.default
                 config.urlCache = nil
-                return DataLoader(configuration: config)
+                return PicaRoutingDataLoader(fallback: DataLoader(configuration: config))
             }()
             let dataCache = try? DataCache(name: "app.aidoku.Aidoku.datacache") // disk cache
             let imageCache = Nuke.ImageCache() // memory cache
@@ -345,6 +345,52 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
         InterfaceOrientationCoordinator.shared.supportedOrientations
+    }
+}
+
+private final class PicaRoutingDataLoader: DataLoading, @unchecked Sendable {
+    private let fallback: any DataLoading
+
+    init(fallback: any DataLoading) {
+        self.fallback = fallback
+    }
+
+    func loadData(
+        with request: URLRequest,
+        didReceiveData: @escaping @Sendable (Data, URLResponse) -> Void,
+        completion: @escaping @Sendable (Error?) -> Void
+    ) -> any Cancellable {
+        guard PicaNetworkRouting.shouldRoute(request) else {
+            return fallback.loadData(
+                with: request,
+                didReceiveData: didReceiveData,
+                completion: completion
+            )
+        }
+
+        let task = Task {
+            do {
+                let (data, response) = try await PicaNetworkRouting.data(for: request)
+                try Task<Never, Never>.checkCancellation()
+                didReceiveData(data, response)
+                completion(nil)
+            } catch {
+                completion(error)
+            }
+        }
+        return PicaRoutingCancellable(task: task)
+    }
+}
+
+private final class PicaRoutingCancellable: Cancellable, @unchecked Sendable {
+    private let task: Task<Void, Never>
+
+    init(task: Task<Void, Never>) {
+        self.task = task
+    }
+
+    func cancel() {
+        task.cancel()
     }
 }
 

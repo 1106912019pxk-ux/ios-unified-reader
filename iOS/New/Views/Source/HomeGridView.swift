@@ -192,4 +192,3 @@ struct HomeGridView: View {
         .padding([.horizontal, .bottom])
     }
 }
-

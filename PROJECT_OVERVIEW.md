@@ -39,6 +39,10 @@ Yuedu 保留为 EPUB、CoreText、WebDAV、OPDS 和网页导入的产品/架构�
 ## 当前边界
 
 - 已进入 V0：App 与来源两个私有仓库均已建立，来源按独立 `.aix` 文件交付并由用户手动导入。
+- Aidoku、PICA 和 E-Hentai 是独立开发与交付项目。Aidoku 只生成 IPA，绝不编译、内置或附带 PICA/E-Hentai `.aix`。
+- Aidoku 是扩展宿主；AIX API 无法完成的网络或界面能力可以作为宿主适配进入 Aidoku，但只参与 IPA 编译，不改变来源的独立版本、构建和手动安装方式。
+- 现有 PICA 网络线路、收藏按钮和详情交互属于宿主适配，不代表 PICA AIX 随 Aidoku 构建。
 - 本阶段不建立本地 iOS/Xcode 验证环境。
 - GitHub 私有仓库已创建，默认分支为 `main`；代码开发后通过云端构建 IPA。
 - 不实现 Android APK/JAR 运行桥，也不把三个来源内置进 IPA；App 与任一扩展可以单独迭代和回退。
+

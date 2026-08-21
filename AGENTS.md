@@ -9,7 +9,8 @@
 - 已选定 Aidoku 作为 V0/V1 底座；Yuedu 只作为 EPUB/WebDAV/OPDS/浏览器设计参考，Mangayomi 只保留为 JAR 桥资料。
 - 已进入 V0：本地独立 Git、GitHub 私有仓库和 Aidoku 上游基线均已建立。
 - `origin` 只指向 `1106912019pxk-ux/ios-unified-reader`；`upstream` 只指向 `Aidoku/Aidoku`，不得把个人改动推送到上游。
-- 在用户澄清“APK 扩展”是否指 `.aix` 前，不引入 JVM/Android APK 运行桥；可以继续完成仓库骨架、来源迁移清单和云端构建基线。
+- 扩展格式已确定为 Aidoku 原生 `.aix`；不引入 JVM/Android APK 运行桥。
+- App 与来源分仓维护：本仓库只维护 Aidoku App，`ios-unified-reader-sources` 维护独立导入的 Komiic、Picacomic、E-Hentai 来源。
 - 从本阶段起，有效代码迭代需要提交并推送；只有纯文档且尚未伴随开发时才可暂不上传。
 
 ## 开发阶段规则
@@ -21,7 +22,7 @@
 - 每次有效代码迭代完成后，提交并推送到本项目自己的仓库，等待构建，并提供版本、提交、SHA-256 和已知限制。
 - GitHub Actions 成功不等于真机功能通过；必须单独记录用户验收结论。
 - 只实现用户已确认的协议和格式，不为假设中的未来兼容提前引入多套运行时。
-- `CustomSources/` 中每份来源必须记录原仓库、固定提交、许可证和本项目修改；App 与来源使用独立工作流和产物。
+- 来源仓库中的每份定制来源必须记录原仓库、固定提交、许可证和个人修改；App 与来源使用独立仓库、工作流和产物。
 - Picacomic 远端收藏必须通过真正的详情页操作接口完成，不得重新使用伪装章节或必须退出漫画后筛选的交互。
 
 ## 需求边界

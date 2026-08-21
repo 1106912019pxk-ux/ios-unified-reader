@@ -20,12 +20,11 @@
 
 ## 阶段 1：V0 技术闭环
 
-### 扩展格式决策门
+### 扩展交付方式（已确定）
 
-用户最新将首版描述为“原生 Aidoku + APK 扩展”。在改造插件运行时前必须先确认：
-
-- 若“APK”实际指 Aidoku `.aix` 来源包，则沿用当前低风险方案，首版实现三份来源并迁移 Pica/E-Hentai 既有改动；
-- 若明确要求直接加载 Android APK，则需重新评估 JVM/Android API 桥，首版范围和工期将发生数量级变化，不能在当前 Aidoku `.aix` 方案中默认为同一件事。
+- 使用 Aidoku 原生 `.aix` 来源，不实现 Android APK/JAR 运行桥。
+- Komiic、Picacomic、E-Hentai 各自生成独立文件，由用户按需手动导入。
+- 来源不内置进 IPA；App 与扩展可以分别更新、替换和回退。
 
 ### 公共工作
 
@@ -38,8 +37,8 @@
   - 上传 Actions Artifact；
   - 记录源码提交、构建号和 SHA-256。
 - 为自签构建建立独立配置，去掉免费签名无法使用或容易冲突的 iCloud、Push 等 entitlement；这些能力以后在有正式签名条件时再开启。
-- 在同一仓库建立 `CustomSources/`，只维护 Komiic、Picacomic、E-Hentai 三份来源；保留 Apache-2.0 许可证、固定上游提交和修改说明。
-- App 与来源使用独立路径触发：App 生成 IPA；来源生成 `.aix` 和来源列表，避免修改一个来源就重打整个 App。
+- 在独立仓库 `ios-unified-reader-sources` 维护 Komiic、Picacomic、E-Hentai；保留 Apache-2.0 许可证、固定上游提交和修改说明。
+- App 仓库生成 IPA，来源仓库生成独立 `.aix`；修改来源不重打 App。
 
 ### 真机验收闭环
 

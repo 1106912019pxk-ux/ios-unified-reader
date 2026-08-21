@@ -152,10 +152,12 @@ struct MangaDetailsHeaderView: View {
                     labelsView
 
                     buttonsView
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(height: 174)
+            .frame(minHeight: 174)
             .padding(.bottom, 14)
             .padding(.horizontal, 20)
 

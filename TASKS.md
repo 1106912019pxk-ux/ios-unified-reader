@@ -1,6 +1,6 @@
 # iOS Unified Reader 任务清单
 
-更新时间：2026-08-21
+更新时间：2026-08-22
 
 ## 当前状态
 
@@ -9,7 +9,7 @@
 - 独立 Git：已初始化，默认分支 `main`。
 - GitHub 仓库：已创建，`1106912019pxk-ux/ios-unified-reader`（私有）。
 - 上游源码：已导入完整历史，基线 `45fe8231a8da58f70f5f2e152a039fcb49eab4cb`。
-- IPA：未构建。
+- IPA：首个可安装基线已完成真机验证；当前开发 Pica 专用线路实验版。
 
 ## 已完成
 
@@ -32,6 +32,7 @@
 - [x] 导入 Aidoku 完整 Git 历史并固定首个上游基线。
 - [x] 建立独立私有来源仓库 `1106912019pxk-ux/ios-unified-reader-sources`，保留 Aidoku Community Sources 完整历史。
 - [x] 确认三个来源以独立 `.aix` 文件交付，由用户按需手动导入，不内置进 IPA。
+- [ ] 真机对比 Pica 系统 DNS 与专用线路的首页、详情和阅读首图耗时；专用线路必须保持原域名 TLS 校验并与网页浏览隔离。
 
 ## 等待用户确认
 

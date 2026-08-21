@@ -1082,3 +1082,4 @@ private struct MangaActionButtonStyle: ButtonStyle {
         hasOtherDownloads: false,
     )
 }
+

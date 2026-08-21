@@ -301,7 +301,7 @@ struct MangaDetailsHeaderView: View {
     }
 
     @ViewBuilder
-    func picaMetadataView(_ metadata: PicaDetailMetadata) -> some View {
+    private func picaMetadataView(_ metadata: PicaDetailMetadata) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(metadata.rows, id: \.self) { row in
                 let value = if row.label == "哔咔收藏", let picaFavouriteOverride {

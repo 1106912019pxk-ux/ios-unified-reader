@@ -5,16 +5,63 @@ on:
     branches:
       - spike/readium-spm-resolution
     paths:
-      - "_spikes/readium-spm/**"
       - ".github/workflows/readium-spm-resolution.yml"
 
+permissions:
+  contents: read
+
 jobs:
-  resolve:
-    runs-on: macos-15
+  resolve-patched-readium:
+    runs-on: macos-26
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "26.6"
       - name: Show Swift version
         run: swift --version
-      - name: Resolve Aidoku and Readium ZIP dependencies
-        run: swift package resolve --package-path _spikes/readium-spm
+      - name: Prepare Readium-side package identity patch
+        run: |
+          set -euo pipefail
+          work="_spikes/readium-spm-patched"
+          mkdir -p "$work/Vendor"
+          git clone --depth 1 --branch 3.8.0 https://github.com/readium/swift-toolkit.git "$work/Vendor/swift-toolkit"
+          git clone --depth 1 --branch 3.0.1 https://github.com/readium/ZIPFoundation.git "$work/Vendor/ReadiumZIPFoundation"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          manifest = Path("_spikes/readium-spm-patched/Vendor/swift-toolkit/Package.swift")
+          text = manifest.read_text()
+          old_dependency = '.package(url: "https://github.com/readium/ZIPFoundation.git", from: "3.0.1"),'
+          new_dependency = '.package(path: "../ReadiumZIPFoundation"),'
+          if old_dependency not in text:
+              raise SystemExit("Readium ZIPFoundation dependency declaration changed")
+          text = text.replace(old_dependency, new_dependency)
+          text = text.replace(
+              '.product(name: "ReadiumZIPFoundation", package: "ZIPFoundation")',
+              '.product(name: "ReadiumZIPFoundation", package: "ReadiumZIPFoundation")',
+          )
+          manifest.write_text(text)
+          PY
+          cat > "$work/Package.swift" <<'SWIFT'
+          // swift-tools-version: 5.10
+          import PackageDescription
+
+          let package = Package(
+              name: "ReadiumPatchedResolutionSpike",
+              platforms: [
+                  .iOS(.v15)
+              ],
+              dependencies: [
+                  .package(
+                      url: "https://github.com/weichsel/ZIPFoundation.git",
+                      exact: "0.9.20"
+                  ),
+                  .package(path: "Vendor/swift-toolkit")
+              ]
+          )
+          SWIFT
+      - name: Resolve patched Readium with Aidoku ZIPFoundation
+        run: swift package resolve --package-path _spikes/readium-spm-patched

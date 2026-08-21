@@ -84,20 +84,26 @@ struct SourceHomeContentView: View {
                             Group {
                                 switch listing.kind {
                                     case .default:
-                                        HomeGridView(source: source, entries: entries, bookmarkedItems: $bookmarkedItems) {
-                                            if hasMore && listingLoadState != .loading {
-                                                await loadEntries()
-                                            }
-                                        }
+                                        HomeGridView(
+                                            source: source,
+                                            entries: entries,
+                                            bookmarkedItems: $bookmarkedItems,
+                                            loadMore: hasMore ? {
+                                                if listingLoadState != .loading {
+                                                    await loadEntries()
+                                                }
+                                            } : nil
+                                        )
                                     case .list:
                                         HomeListView(
                                             source: source,
-                                            component: .init(title: nil, value: .mangaList(entries: entries.map { $0.intoLink() }))
-                                        ) {
-                                            if hasMore && listingLoadState != .loading {
-                                                await loadEntries()
-                                            }
-                                        }
+                                            component: .init(title: nil, value: .mangaList(entries: entries.map { $0.intoLink() })),
+                                            loadMore: hasMore ? {
+                                                if listingLoadState != .loading {
+                                                    await loadEntries()
+                                                }
+                                            } : nil
+                                        )
                                         .id(listingSelection) // Force recreation on listing change
                                         .padding(.bottom)
                                 }
@@ -374,10 +380,22 @@ struct SourceHomeContentView: View {
             var resultsLoaded = false
 
             // start loading listing items
+            let startingPage = page
             let resultTask = Task {
-                let result = try await source.getMangaList(listing: listing, page: page)
+                var requestedPage = startingPage
+                var result = try await source.getMangaList(listing: listing, page: requestedPage)
                 resultsLoaded = true
-                return result
+
+                // A source may filter every entry from an otherwise valid page.
+                // Skip empty intermediate pages so the pagination sentinel does
+                // not disappear before reaching the next visible result.
+                var skippedEmptyPages = 0
+                while result.entries.isEmpty && result.hasNextPage && skippedEmptyPages < 20 {
+                    requestedPage += 1
+                    skippedEmptyPages += 1
+                    result = try await source.getMangaList(listing: listing, page: requestedPage)
+                }
+                return (result, requestedPage)
             }
 
             hasMore = false
@@ -404,13 +422,13 @@ struct SourceHomeContentView: View {
             }
 
             // load new results
-            let result = try await resultTask.value
+            let (result, lastRequestedPage) = try await resultTask.value
 
             guard !Task.isCancelled else { return }
 
             hasMore = result.hasNextPage
             listingLoadState = hasMore ? .notLoading : .allLoaded
-            page += 1
+            page = lastRequestedPage + 1
 
             // load bookmark icons for stuff that's in our library
             let bookmarkedKeys: [String] = await CoreDataManager.shared.container.performBackgroundTask { context in
@@ -455,3 +473,4 @@ struct SourceHomeContentView: View {
         }
     }
 }
+

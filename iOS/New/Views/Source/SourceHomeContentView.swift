@@ -473,4 +473,3 @@ struct SourceHomeContentView: View {
         }
     }
 }
-

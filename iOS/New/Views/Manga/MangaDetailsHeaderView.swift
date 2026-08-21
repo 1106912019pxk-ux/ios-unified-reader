@@ -277,7 +277,6 @@ struct MangaDetailsHeaderView: View {
             .lineLimit(2)
             .foregroundStyle(isPicaSource ? Color.accentColor : Color.secondary)
             .font(.callout)
-            .underline(isPicaSource)
 
         if let source, source.supportsAuthorSearch || isPicaSource {
             Button {
@@ -1083,4 +1082,3 @@ private struct MangaActionButtonStyle: ButtonStyle {
         hasOtherDownloads: false,
     )
 }
-

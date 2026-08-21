@@ -387,12 +387,15 @@ private actor PicaChannelResolver {
     static let shared = PicaChannelResolver()
 
     private static let initURL = URL(string: "http://68.183.234.72/init")
+    private static let bootstrapAddresses = ["104.19.53.76"]
     private static let cacheAddressesKey = "PicaChannel.addresses"
     private static let cacheDateKey = "PicaChannel.updatedAt"
     private static let cacheLifetime: TimeInterval = 24 * 60 * 60
+    private static let refreshRetryInterval: TimeInterval = 5 * 60
 
     private var addresses: [String]?
-    private var loadTask: Task<[String], Never>?
+    private var refreshTask: Task<Void, Never>?
+    private var lastRefreshAttempt: Date?
 
     func targetHost(for originalHost: String) async -> String {
         let host = originalHost.lowercased()
@@ -403,7 +406,8 @@ private actor PicaChannelResolver {
         let channel = UserDefaults.standard.string(forKey: "\(PicaNetworkRouting.sourceId).appChannel") ?? "2"
         guard channel != "1" else { return originalHost }
 
-        let addresses = await loadAddresses()
+        let addresses = cachedAddresses()
+        refreshAddressesIfNeeded()
         guard !addresses.isEmpty else { return originalHost }
         let preferredIndex = channel == "3" ? 1 : 0
         let target = addresses.indices.contains(preferredIndex) ? addresses[preferredIndex] : addresses[0]
@@ -411,43 +415,46 @@ private actor PicaChannelResolver {
         return target
     }
 
-    private func loadAddresses() async -> [String] {
+    private func cachedAddresses() -> [String] {
         if let addresses {
             return addresses
         }
 
+        let cachedAddresses = UserDefaults.standard.stringArray(forKey: Self.cacheAddressesKey) ?? []
+        let initialAddresses = cachedAddresses.isEmpty ? Self.bootstrapAddresses : cachedAddresses
+        addresses = initialAddresses
+        return initialAddresses
+    }
+
+    private func refreshAddressesIfNeeded() {
         let defaults = UserDefaults.standard
-        let cachedAddresses = defaults.stringArray(forKey: Self.cacheAddressesKey) ?? []
         let cacheDate = defaults.double(forKey: Self.cacheDateKey)
-        if !cachedAddresses.isEmpty, Date().timeIntervalSince1970 - cacheDate < Self.cacheLifetime {
-            addresses = cachedAddresses
-            return cachedAddresses
+        let cacheIsFresh = Date().timeIntervalSince1970 - cacheDate < Self.cacheLifetime
+        guard !cacheIsFresh, refreshTask == nil else { return }
+
+        if let lastRefreshAttempt,
+           Date().timeIntervalSince(lastRefreshAttempt) < Self.refreshRetryInterval
+        {
+            return
         }
+        lastRefreshAttempt = Date()
 
-        if let loadTask {
-            return await loadTask.value
+        refreshTask = Task {
+            let fetchedAddresses = await Self.fetchAddresses()
+            if !fetchedAddresses.isEmpty {
+                defaults.set(fetchedAddresses, forKey: Self.cacheAddressesKey)
+                defaults.set(Date().timeIntervalSince1970, forKey: Self.cacheDateKey)
+                addresses = fetchedAddresses
+                LogManager.logger.log("Pica channel addresses updated in background")
+            }
+            refreshTask = nil
         }
-
-        let task = Task { await Self.fetchAddresses() }
-        loadTask = task
-        let fetchedAddresses = await task.value
-        loadTask = nil
-
-        if !fetchedAddresses.isEmpty {
-            defaults.set(fetchedAddresses, forKey: Self.cacheAddressesKey)
-            defaults.set(Date().timeIntervalSince1970, forKey: Self.cacheDateKey)
-            addresses = fetchedAddresses
-            return fetchedAddresses
-        }
-
-        addresses = cachedAddresses
-        return cachedAddresses
     }
 
     private static func fetchAddresses() async -> [String] {
         guard let initURL else { return [] }
         var request = URLRequest(url: initURL)
-        request.timeoutInterval = 8
+        request.timeoutInterval = 3
         request.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
         request.setValue("okhttp/3.8.1", forHTTPHeaderField: "User-Agent")
 
@@ -887,3 +894,4 @@ extension AidokuRunner.SelectFilter {
         defaultValue ?? ids?.first ?? options.first ?? ""
     }
 }
+

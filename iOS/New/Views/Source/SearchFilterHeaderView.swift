@@ -123,4 +123,3 @@ private enum PicaFilterAdapter {
         value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 }
-

@@ -1,4 +1,8 @@
 # Aidoku
+
+> [!NOTE]
+> This is a personal Aidoku-based fork for an iOS unified reader and custom Komiic, Picacomic, and E-Hentai sources. Project scope, migration decisions, and delivery status are documented in [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md).
+
 A free and open source manga reading application for iOS and iPadOS.
 
 ## Features

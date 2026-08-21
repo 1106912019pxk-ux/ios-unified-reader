@@ -121,7 +121,6 @@ struct HomeListView: View {
                     }
                 }
                 .onChange(of: entries) { _ in
-                    loadingMore = false
                     Task {
                         if !loadedBookmarks {
                             await loadBookmarked()
@@ -143,6 +142,7 @@ struct HomeListView: View {
                     loadingMore = true
                     Task {
                         await loadMore?()
+                        loadingMore = false
                     }
                 }
         }
@@ -332,3 +332,4 @@ struct PlaceholderMangaHomeList: View {
         }
     }
 }
+

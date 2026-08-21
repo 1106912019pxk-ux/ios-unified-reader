@@ -1,7 +1,14 @@
 name: Build and upload nightly ipa
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - build/aidoku-20260822
+    paths:
+      - ".github/workflows/nightly.yml"
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -26,6 +33,17 @@ jobs:
           mkdir Payload
           cp -r build/Aidoku.xcarchive/Products/Applications/Aidoku.app Payload
           zip -r Aidoku-iOS_nightly-${{ steps.commitinfo.outputs.sha_short }}.ipa Payload
+      - name: Publish fixed Aidoku package path
+        run: |
+          mkdir -p release/aidoku
+          cp Aidoku-iOS_nightly-*.ipa release/aidoku/Aidoku-iOS-latest.ipa
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f release/aidoku/Aidoku-iOS-latest.ipa
+          if ! git diff --cached --quiet; then
+            git commit -m "build(aidoku): publish latest IPA"
+            git push
+          fi
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:

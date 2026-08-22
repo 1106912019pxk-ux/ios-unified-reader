@@ -123,6 +123,7 @@ extension SettingsView {
         }
         .searchable(text: $searchText)
         .navigationTitle(NSLocalizedString("SETTINGS"))
+        .navigationBarTitleDisplayMode(.inline)
         .onChange(of: searchText) { _ in
             search()
         }

@@ -127,10 +127,13 @@ enum Settings {
             )
         ]))),
         .init(
+            key: "EBooks",
             title: NSLocalizedString("EBOOKS", value: "Books", comment: "E-book settings title"),
-            value: .group(.init(
-                footer: NSLocalizedString("EBOOK_GLOBAL_SETTINGS_INFO", comment: "Global e-book settings explanation"),
-                items: ebookSettings
+            value: .page(.init(
+                items: ebookSettings,
+                inlineTitle: true,
+                icon: .system(name: "text.book.closed.fill", color: "purple", inset: 4),
+                info: NSLocalizedString("EBOOK_GLOBAL_SETTINGS_INFO", comment: "Global e-book settings explanation")
             ))
         ),
         .init(value: .group(.init(items: [
@@ -662,6 +665,30 @@ extension Settings {
                     titles: [
                         NSLocalizedString("EBOOK_PAGED_READING", comment: "Paginated e-book reading"),
                         NSLocalizedString("EBOOK_SCROLL_READING", comment: "Scrolling e-book reading"),
+                    ]
+                ))
+            ),
+            .init(
+                key: EBookPreferences.defaultReadingDirectionKey,
+                title: NSLocalizedString("EBOOK_READING_DIRECTION", comment: "Default e-book reading direction"),
+                value: .select(.init(
+                    values: EBookPreferences.ReadingDirection.allCases.map(\.rawValue),
+                    titles: [
+                        NSLocalizedString("EBOOK_DIRECTION_AUTO", comment: "Follow publication reading direction"),
+                        NSLocalizedString("EBOOK_DIRECTION_LTR", comment: "Left-to-right reading direction"),
+                        NSLocalizedString("EBOOK_DIRECTION_RTL", comment: "Right-to-left reading direction"),
+                    ]
+                ))
+            ),
+            .init(
+                key: EBookPreferences.defaultPageLayoutKey,
+                title: NSLocalizedString("EBOOK_PAGE_LAYOUT", comment: "Default e-book page layout"),
+                value: .select(.init(
+                    values: EBookPreferences.PageLayout.allCases.map(\.rawValue),
+                    titles: [
+                        NSLocalizedString("EBOOK_PAGE_LAYOUT_AUTO", comment: "Automatic page layout"),
+                        NSLocalizedString("EBOOK_PAGE_LAYOUT_SINGLE", comment: "Single page layout"),
+                        NSLocalizedString("EBOOK_PAGE_LAYOUT_DOUBLE", comment: "Double page layout"),
                     ]
                 ))
             ),

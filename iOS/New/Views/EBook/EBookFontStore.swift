@@ -43,6 +43,7 @@ final class EBookFontStore: ObservableObject {
 
     let fontsDirectory: URL
     private let fileManager = FileManager.default
+    private var allFontFiles: [Font] = []
 
     private init() {
         let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -73,7 +74,7 @@ final class EBookFontStore: ObservableObject {
         }
         refresh()
         let importedNames = Set(importedFileNames)
-        return fonts.filter { importedNames.contains($0.fileName) }
+        return allFontFiles.filter { importedNames.contains($0.fileName) }
     }
 
     func font(named familyName: String?) -> Font? {
@@ -89,7 +90,7 @@ final class EBookFontStore: ObservableObject {
         )) ?? []
 
         let normalizedURLs = urls.map(normalizeFontFileName)
-        fonts = normalizedURLs.compactMap { url in
+        allFontFiles = normalizedURLs.compactMap { url in
             guard ["ttf", "otf"].contains(url.pathExtension.lowercased()) else { return nil }
             CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
             let descriptors = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor]
@@ -99,6 +100,24 @@ final class EBookFontStore: ObservableObject {
             return Font(familyName: family, fileName: url.lastPathComponent, url: url)
         }
         .sorted { $0.familyName.localizedCaseInsensitiveCompare($1.familyName) == .orderedAscending }
+
+        var seenFamilies = Set<String>()
+        fonts = allFontFiles.filter {
+            seenFamilies.insert($0.familyName.lowercased()).inserted
+        }
+    }
+
+    func deleteImportedFont(familyName: String) throws {
+        let matchingFiles = allFontFiles.filter {
+            $0.familyName.caseInsensitiveCompare(familyName) == .orderedSame
+        }
+        guard !matchingFiles.isEmpty else { return }
+
+        defer { refresh() }
+        for font in matchingFiles {
+            CTFontManagerUnregisterFontsForURL(font.url as CFURL, .process, nil)
+            try fileManager.removeItem(at: font.url)
+        }
     }
 
     func readiumDeclarations() -> [AnyHTMLFontFamilyDeclaration] {
@@ -135,11 +154,7 @@ final class EBookFontStore: ObservableObject {
 
 @MainActor
 struct EBookDefaultFontSettingView: View {
-    @ObservedObject private var fontStore = EBookFontStore.shared
-
     @State private var selectedFamily: String?
-    @State private var isImporting = false
-    @State private var message: String?
 
     init() {
         EBookPreferences.registerGlobalDefaults()
@@ -148,52 +163,101 @@ struct EBookDefaultFontSettingView: View {
     }
 
     var body: some View {
-        HStack {
-            Text(NSLocalizedString("EBOOK_DEFAULT_FONT", comment: "Default e-book font setting"))
-            Spacer()
-            Menu {
-                fontButton(
+        NavigationLink {
+            EBookFontManagementView(selectedFamily: $selectedFamily)
+        } label: {
+            HStack {
+                Text(NSLocalizedString("EBOOK_DEFAULT_FONT", comment: "Default e-book font setting"))
+                Spacer()
+                Text(displayName(for: selectedFamily))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private func displayName(for familyName: String?) -> String {
+        guard let familyName else {
+            return NSLocalizedString("EBOOK_BOOK_DEFAULT_FONT", comment: "Use book default font option")
+        }
+        if familyName == EBookFontStore.systemFontFamily {
+            return NSLocalizedString("EBOOK_SYSTEM_FONT", comment: "System e-book font")
+        }
+        return familyName
+    }
+}
+
+@MainActor
+private struct EBookFontManagementView: View {
+    @ObservedObject private var fontStore = EBookFontStore.shared
+    @Binding var selectedFamily: String?
+
+    @State private var isImporting = false
+    @State private var message: String?
+    @State private var pendingDeletion: EBookFontStore.Font?
+
+    var body: some View {
+        List {
+            Section {
+                selectionButton(
                     title: NSLocalizedString("EBOOK_BOOK_DEFAULT_FONT", comment: "Use book default font option"),
                     familyName: nil
                 )
-                fontButton(
+                selectionButton(
                     title: NSLocalizedString("EBOOK_SYSTEM_FONT", comment: "System e-book font"),
                     familyName: EBookFontStore.systemFontFamily
                 )
+            }
 
-                if !EBookFontStore.builtInFontFamilies.isEmpty {
-                    Section(NSLocalizedString("EBOOK_BUILT_IN_FONTS", comment: "Built-in e-book fonts")) {
-                        ForEach(EBookFontStore.builtInFontFamilies, id: \.self) { family in
-                            fontButton(title: family, familyName: family)
-                        }
+            if !EBookFontStore.builtInFontFamilies.isEmpty {
+                Section(NSLocalizedString("EBOOK_BUILT_IN_FONTS", comment: "Built-in e-book fonts")) {
+                    ForEach(EBookFontStore.builtInFontFamilies, id: \.self) { family in
+                        selectionButton(title: family, familyName: family)
                     }
                 }
+            }
 
-                if !fontStore.fonts.isEmpty {
-                    Section(NSLocalizedString("EBOOK_IMPORTED_FONTS", comment: "Imported e-book fonts")) {
-                        ForEach(fontStore.fonts) { font in
-                            fontButton(title: font.familyName, familyName: font.familyName)
-                        }
+            if !fontStore.fonts.isEmpty {
+                Section(NSLocalizedString("EBOOK_IMPORTED_FONTS", comment: "Imported e-book fonts")) {
+                    ForEach(fontStore.fonts) { font in
+                        selectionButton(title: font.familyName, familyName: font.familyName)
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    pendingDeletion = font
+                                } label: {
+                                    Label(
+                                        NSLocalizedString("EBOOK_DELETE_FONT", comment: "Delete imported e-book font"),
+                                        systemImage: "trash"
+                                    )
+                                }
+                            }
+                            .swipeActions {
+                                Button(role: .destructive) {
+                                    pendingDeletion = font
+                                } label: {
+                                    Label(
+                                        NSLocalizedString("EBOOK_DELETE_FONT", comment: "Delete imported e-book font"),
+                                        systemImage: "trash"
+                                    )
+                                }
+                            }
                     }
                 }
+            }
 
-                Divider()
+            Section {
                 Button {
                     isImporting = true
                 } label: {
-                    Label(NSLocalizedString("EBOOK_IMPORT_FONT", comment: "Import e-book font action"), systemImage: "text.badge.plus")
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    Text(displayName(for: selectedFamily))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                    Label(
+                        NSLocalizedString("EBOOK_IMPORT_FONT", comment: "Import e-book font action"),
+                        systemImage: "text.badge.plus"
+                    )
                 }
             }
         }
+        .navigationTitle(NSLocalizedString("EBOOK_DEFAULT_FONT", comment: "Default e-book font"))
+        .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $isImporting) {
             DocumentPickerView(
                 allowedContentTypes: Self.fontContentTypes,
@@ -202,7 +266,10 @@ struct EBookDefaultFontSettingView: View {
                 isImporting = false
                 guard !urls.isEmpty else { return }
                 do {
-                    _ = try fontStore.importFonts(urls)
+                    let importedFonts = try fontStore.importFonts(urls)
+                    if let firstFont = importedFonts.first {
+                        select(firstFont.familyName)
+                    }
                     message = NSLocalizedString("EBOOK_FONT_IMPORTED_AVAILABLE", comment: "Imported font available message")
                 } catch {
                     message = error.localizedDescription
@@ -217,33 +284,59 @@ struct EBookDefaultFontSettingView: View {
         } message: {
             Text(message ?? "")
         }
+        .confirmationDialog(
+            NSLocalizedString("EBOOK_DELETE_FONT", comment: "Delete imported e-book font"),
+            isPresented: Binding(
+                get: { pendingDeletion != nil },
+                set: { if !$0 { pendingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(NSLocalizedString("DELETE", comment: ""), role: .destructive) {
+                deletePendingFont()
+            }
+            Button(NSLocalizedString("CANCEL", comment: ""), role: .cancel) {
+                pendingDeletion = nil
+            }
+        } message: {
+            Text(pendingDeletion?.familyName ?? "")
+        }
     }
 
-    @ViewBuilder
-    private func fontButton(title: String, familyName: String?) -> some View {
+    private func selectionButton(title: String, familyName: String?) -> some View {
         Button {
-            selectedFamily = familyName
-            EBookPreferences.saveGlobalDefaultFontFamily(familyName)
+            select(familyName)
         } label: {
-            if selectedFamily == familyName {
-                Label(title, systemImage: "checkmark")
-            } else {
+            HStack {
                 Text(title)
+                    .foregroundStyle(.primary)
+                Spacer()
+                if selectedFamily == familyName {
+                    Image(systemName: "checkmark")
+                }
             }
+        }
+    }
+
+    private func select(_ familyName: String?) {
+        selectedFamily = familyName
+        EBookPreferences.saveGlobalDefaultFontFamily(familyName)
+    }
+
+    private func deletePendingFont() {
+        guard let font = pendingDeletion else { return }
+        pendingDeletion = nil
+        do {
+            try fontStore.deleteImportedFont(familyName: font.familyName)
+            if selectedFamily?.caseInsensitiveCompare(font.familyName) == .orderedSame {
+                select(nil)
+            }
+        } catch {
+            message = error.localizedDescription
         }
     }
 
     private static var fontContentTypes: [UTType] {
         ["ttf", "otf"].compactMap { UTType(filenameExtension: $0) }
-    }
-
-    private func displayName(for familyName: String?) -> String {
-        guard let familyName else {
-            return NSLocalizedString("EBOOK_BOOK_DEFAULT_FONT", comment: "Use book default font option")
-        }
-        if familyName == EBookFontStore.systemFontFamily {
-            return NSLocalizedString("EBOOK_SYSTEM_FONT", comment: "System e-book font")
-        }
-        return familyName
     }
 }

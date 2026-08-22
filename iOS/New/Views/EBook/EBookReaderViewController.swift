@@ -27,6 +27,7 @@ final class EBookReaderViewController: UIViewController {
     private var bookmarkButton: UIBarButtonItem?
     private var readerBarsHidden = false
     private var previousIdleTimerDisabled: Bool?
+    private let readerPageLabel = UILabel()
 
     init(bookID: UUID, store: EBookLibraryStore = .shared) {
         self.bookID = bookID
@@ -76,7 +77,7 @@ final class EBookReaderViewController: UIViewController {
     }
 
     override var prefersStatusBarHidden: Bool {
-        readerBarsHidden
+        false
     }
 
     private func openBook() async {
@@ -136,6 +137,7 @@ final class EBookReaderViewController: UIViewController {
         )
         title = publication.metadata.title ?? book.title
         installChild(navigator)
+        installReaderPageLabel()
         configureEPUBButtons()
     }
 
@@ -183,6 +185,8 @@ final class EBookReaderViewController: UIViewController {
         }
         installContentView(pdfView)
         self.pdfView = pdfView
+        installReaderPageLabel()
+        updatePDFPageLabel(pdfView)
         pageChangeObserver = NotificationCenter.default.addObserver(
             forName: .PDFViewPageChanged,
             object: pdfView,
@@ -194,6 +198,7 @@ final class EBookReaderViewController: UIViewController {
             else { return }
             Task { @MainActor in
                 self.store.savePDFPage(index, for: self.bookID)
+                self.updatePDFPageLabel(pdfView)
             }
         }
         navigationItem.rightBarButtonItems = []
@@ -216,6 +221,7 @@ final class EBookReaderViewController: UIViewController {
 
         installContentView(webView)
         self.webView = webView
+        installReaderPageLabel()
         loadWebDocument(book, at: url)
         configureWebButtons()
     }
@@ -307,16 +313,36 @@ final class EBookReaderViewController: UIViewController {
             article { max-width: 48rem; margin: 0 auto; }
             """
         } else {
+            let singleColumnWidth = "calc(100vw - \(horizontalMargin * 2)px)"
+            let doubleColumnWidth = "calc((100vw - \(horizontalMargin * 3)px) / 2)"
+            let columnWidth: String
+            let adaptiveLayout: String
+            switch preferences.pageLayout {
+            case .automatic:
+                columnWidth = singleColumnWidth
+                adaptiveLayout = """
+                @media (min-width: 700px) and (orientation: landscape) {
+                    body { column-width: \(doubleColumnWidth); }
+                }
+                """
+            case .single:
+                columnWidth = singleColumnWidth
+                adaptiveLayout = ""
+            case .double:
+                columnWidth = doubleColumnWidth
+                adaptiveLayout = ""
+            }
             layout = """
             html, body { width: 100%; height: 100%; overflow: hidden !important; }
             body {
                 height: 100vh;
                 padding: \(preferences.topMargin)px \(horizontalMargin)px \(preferences.bottomMargin)px;
-                column-width: calc(100vw - \(horizontalMargin * 2)px);
+                column-width: \(columnWidth);
                 column-gap: \(horizontalMargin * 2)px;
                 column-fill: auto;
             }
             article { width: auto; max-width: none; margin: 0; }
+            \(adaptiveLayout)
             """
         }
         return """
@@ -446,6 +472,65 @@ final class EBookReaderViewController: UIViewController {
         ])
     }
 
+    private func installReaderPageLabel() {
+        readerPageLabel.removeFromSuperview()
+        readerPageLabel.font = .preferredFont(forTextStyle: .caption2)
+        readerPageLabel.textColor = .secondaryLabel
+        readerPageLabel.textAlignment = .center
+        readerPageLabel.adjustsFontForContentSizeCategory = true
+        readerPageLabel.isUserInteractionEnabled = false
+        readerPageLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(readerPageLabel)
+        NSLayoutConstraint.activate([
+            readerPageLabel.centerXAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerXAnchor),
+            readerPageLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            readerPageLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+            readerPageLabel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8),
+        ])
+        view.bringSubviewToFront(readerPageLabel)
+    }
+
+    private func updatePageLabel(position: Int?) {
+        guard let position, position > 0 else {
+            readerPageLabel.text = nil
+            return
+        }
+        readerPageLabel.text = String(
+            format: NSLocalizedString("EBOOK_PAGE_NUMBER", comment: "Current e-book page number"),
+            position
+        )
+    }
+
+    private func updatePDFPageLabel(_ pdfView: PDFView) {
+        guard let document = pdfView.document,
+              let page = pdfView.currentPage
+        else {
+            updatePageLabel(position: nil)
+            return
+        }
+        let current = document.index(for: page) + 1
+        readerPageLabel.text = String(
+            format: NSLocalizedString("EBOOK_PAGE_NUMBER_WITH_TOTAL", comment: "Current and total e-book page number"),
+            current,
+            document.pageCount
+        )
+    }
+
+    private func updateWebPageLabel() {
+        guard let webView else { return }
+        let scrollView = webView.scrollView
+        let viewport = webIsPaginated ? max(webView.bounds.width, 1) : max(webView.bounds.height, 1)
+        let offset = webIsPaginated ? scrollView.contentOffset.x : scrollView.contentOffset.y
+        let content = webIsPaginated ? scrollView.contentSize.width : scrollView.contentSize.height
+        let current = max(Int(round(offset / viewport)) + 1, 1)
+        let total = max(Int(ceil(content / viewport)), 1)
+        readerPageLabel.text = String(
+            format: NSLocalizedString("EBOOK_PAGE_NUMBER_WITH_TOTAL", comment: "Current and total e-book page number"),
+            min(current, total),
+            total
+        )
+    }
+
     private func configureEPUBButtons() {
         let contentsButton = UIBarButtonItem(
             image: UIImage(systemName: "list.bullet"),
@@ -511,7 +596,9 @@ final class EBookReaderViewController: UIViewController {
             return
         }
         guard webIsPaginated else { return }
-        turnWebPage(forward: relativeX > 0.5)
+        let preferences = store.book(withID: bookID).map { store.effectivePreferences(for: $0) }
+        let isRTL = preferences?.readingDirection == .rightToLeft
+        turnWebPage(forward: isRTL ? relativeX < 0.5 : relativeX > 0.5)
     }
 
     private func turnWebPage(forward: Bool) {
@@ -521,6 +608,10 @@ final class EBookReaderViewController: UIViewController {
         let delta = forward ? pageWidth : -pageWidth
         let target = min(max(webView.scrollView.contentOffset.x + delta, 0), maximumOffset)
         webView.scrollView.setContentOffset(CGPoint(x: target, y: 0), animated: true)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            self?.updateWebPageLabel()
+        }
     }
 
     private func turnPage(forward: Bool) {
@@ -605,23 +696,22 @@ final class EBookReaderViewController: UIViewController {
     @objc private func presentPreferences() {
         guard let book = store.book(withID: bookID) else { return }
         let effectivePreferences = store.effectivePreferences(for: book)
-        let originalFontFamily = effectivePreferences.fontFamily
         let view = EBookPreferencesView(
             format: book.format,
             preferences: effectivePreferences
-        ) { [weak self] preferences, didImportFont in
+        ) { [weak self] preferences, _ in
             guard let self else { return }
             store.savePreferences(preferences, for: bookID)
-            apply(preferences, reloadEPUB: didImportFont || preferences.fontFamily != originalFontFamily)
+            apply(preferences, reloadEPUB: true)
         } onApplyGlobally: { [weak self] preferences in
             guard let self else { return }
             store.applyGlobalPreferences(preferences)
-            apply(preferences, reloadEPUB: preferences.fontFamily != originalFontFamily)
+            apply(preferences, reloadEPUB: true)
         } onReset: { [weak self] in
             guard let self else { return }
             store.resetPreferencesToGlobal(for: bookID)
             let defaults = EBookPreferences.globalDefaults
-            apply(defaults, reloadEPUB: defaults.fontFamily != originalFontFamily)
+            apply(defaults, reloadEPUB: true)
         }
         let controller = UIHostingController(rootView: view)
         present(controller, animated: true)
@@ -638,6 +728,7 @@ final class EBookReaderViewController: UIViewController {
                 )
                 epubNavigator = navigator
                 installChild(navigator)
+                installReaderPageLabel()
                 configureEPUBButtons()
                 setReaderBars(hidden: readerBarsHidden, animated: false)
             } catch {
@@ -697,8 +788,34 @@ final class EBookReaderViewController: UIViewController {
             textColor = ReadiumNavigator.Color(hex: "#F3F3F3")
             backgroundColor = ReadiumNavigator.Color(hex: "#111111")
         }
+
+        let readingProgression: ReadiumShared.ReadingProgression?
+        switch preferences.readingDirection {
+        case .automatic:
+            readingProgression = nil
+        case .leftToRight:
+            readingProgression = .ltr
+        case .rightToLeft:
+            readingProgression = .rtl
+        }
+
+        let columnCount: ColumnCount?
+        let spread: Spread?
+        switch preferences.pageLayout {
+        case .automatic:
+            columnCount = .auto
+            spread = .auto
+        case .single:
+            columnCount = .one
+            spread = .never
+        case .double:
+            columnCount = .two
+            spread = .always
+        }
+
         return EPUBPreferences(
             backgroundColor: backgroundColor,
+            columnCount: columnCount,
             fontFamily: preferences.fontFamily.map(FontFamily.init(rawValue:)),
             fontSize: preferences.fontSize / 24,
             lineHeight: preferences.lineHeight / 10,
@@ -706,7 +823,9 @@ final class EBookReaderViewController: UIViewController {
             paragraphIndent: preferences.paragraphIndent,
             paragraphSpacing: preferences.paragraphSpacing / 10,
             publisherStyles: preferences.usesPublisherStyles,
+            readingProgression: readingProgression,
             scroll: preferences.isScrollEnabled,
+            spread: spread,
             textColor: textColor,
             theme: theme
         )
@@ -730,12 +849,48 @@ extension EBookReaderViewController: EPUBNavigatorDelegate {
     func navigatorContentInset(_ navigator: VisualNavigator) -> UIEdgeInsets? {
         guard let book = store.book(withID: bookID) else { return nil }
         let preferences = store.effectivePreferences(for: book)
+        let safeArea = view.window?.safeAreaInsets ?? view.safeAreaInsets
         return UIEdgeInsets(
-            top: CGFloat(preferences.topMargin),
-            left: 0,
-            bottom: CGFloat(preferences.bottomMargin),
-            right: 0
+            top: safeArea.top + CGFloat(preferences.topMargin),
+            left: safeArea.left,
+            bottom: safeArea.bottom + CGFloat(preferences.bottomMargin),
+            right: safeArea.right
         )
+    }
+
+    func navigator(
+        _ navigator: EPUBNavigatorViewController,
+        viewportDidChange viewport: EPUBNavigatorViewController.Viewport?
+    ) {
+        updatePageLabel(position: viewport?.positions?.lowerBound)
+    }
+
+    func navigator(
+        _ navigator: EPUBNavigatorViewController,
+        setupUserScripts userContentController: WKUserContentController
+    ) {
+        guard let book = store.book(withID: bookID) else { return }
+        let preferences = store.effectivePreferences(for: book)
+        let css = """
+        p, [role="doc-paragraph"] {
+            text-indent: \(preferences.paragraphIndent)em !important;
+        }
+        """
+        let script = """
+        (() => {
+            const previous = document.getElementById('aidoku-ebook-cjk-overrides');
+            if (previous) previous.remove();
+            const style = document.createElement('style');
+            style.id = 'aidoku-ebook-cjk-overrides';
+            style.textContent = \(Self.javascriptString(css));
+            (document.head || document.documentElement).appendChild(style);
+        })();
+        """
+        userContentController.addUserScript(WKUserScript(
+            source: script,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: false
+        ))
     }
 
     func navigator(_ navigator: VisualNavigator, didTapAt point: CGPoint) {
@@ -749,7 +904,15 @@ extension EBookReaderViewController: EPUBNavigatorDelegate {
         }
 
         guard !preferences.isScrollEnabled else { return }
-        let isRTL = publication?.metadata.readingProgression == .rtl
+        let isRTL: Bool
+        switch preferences.readingDirection {
+        case .automatic:
+            isRTL = publication?.metadata.readingProgression == .rtl
+        case .leftToRight:
+            isRTL = false
+        case .rightToLeft:
+            isRTL = true
+        }
         if relativeX < 0.28 {
             turnPage(forward: isRTL)
         } else {
@@ -760,6 +923,7 @@ extension EBookReaderViewController: EPUBNavigatorDelegate {
     func navigator(_ navigator: Navigator, locationDidChange locator: Locator) {
         guard let json = locator.jsonString else { return }
         store.saveLocator(json, for: bookID)
+        updatePageLabel(position: locator.locations.position)
         updateBookmarkButton()
     }
 
@@ -981,6 +1145,32 @@ private extension EBookPreferences.Theme {
     }
 }
 
+private extension EBookPreferences.ReadingDirection {
+    var localizedName: String {
+        switch self {
+        case .automatic:
+            NSLocalizedString("EBOOK_DIRECTION_AUTO", comment: "Follow publication reading direction")
+        case .leftToRight:
+            NSLocalizedString("EBOOK_DIRECTION_LTR", comment: "Left-to-right reading direction")
+        case .rightToLeft:
+            NSLocalizedString("EBOOK_DIRECTION_RTL", comment: "Right-to-left reading direction")
+        }
+    }
+}
+
+private extension EBookPreferences.PageLayout {
+    var localizedName: String {
+        switch self {
+        case .automatic:
+            NSLocalizedString("EBOOK_PAGE_LAYOUT_AUTO", comment: "Automatic page layout")
+        case .single:
+            NSLocalizedString("EBOOK_PAGE_LAYOUT_SINGLE", comment: "Single page layout")
+        case .double:
+            NSLocalizedString("EBOOK_PAGE_LAYOUT_DOUBLE", comment: "Double page layout")
+        }
+    }
+}
+
 private struct EBookPreferencesView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var fontStore = EBookFontStore.shared
@@ -1044,6 +1234,26 @@ private struct EBookPreferencesView: View {
                         Text(NSLocalizedString("EBOOK_PAGED_READING", comment: "Paginated e-book reading")).tag(false)
                         Text(NSLocalizedString("EBOOK_SCROLL_READING", comment: "Scrolling e-book reading")).tag(true)
                     }
+                    Picker(
+                        NSLocalizedString("EBOOK_READING_DIRECTION", comment: "E-book reading direction"),
+                        selection: $preferences.readingDirection
+                    ) {
+                        ForEach(EBookPreferences.ReadingDirection.allCases, id: \.self) {
+                            Text($0.localizedName).tag($0)
+                        }
+                    }
+                    .disabled(preferences.isScrollEnabled)
+
+                    Picker(
+                        NSLocalizedString("EBOOK_PAGE_LAYOUT", comment: "E-book page layout"),
+                        selection: $preferences.pageLayout
+                    ) {
+                        ForEach(EBookPreferences.PageLayout.allCases, id: \.self) {
+                            Text($0.localizedName).tag($0)
+                        }
+                    }
+                    .disabled(preferences.isScrollEnabled)
+
                     if format == .epub || format == .html {
                         Picker(NSLocalizedString("EBOOK_LAYOUT_STYLE", comment: "E-book layout style"), selection: $preferences.usesPublisherStyles) {
                             Text(NSLocalizedString("EBOOK_FOLLOW_BOOK_LAYOUT", comment: "Follow book layout option")).tag(true)
@@ -1158,7 +1368,11 @@ private struct EBookPreferencesView: View {
 }
 
 
-extension EBookReaderViewController: WKNavigationDelegate {}
+extension EBookReaderViewController: WKNavigationDelegate {
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
+        updateWebPageLabel()
+    }
+}
 
 extension EBookReaderViewController: UIGestureRecognizerDelegate {
     func gestureRecognizer(

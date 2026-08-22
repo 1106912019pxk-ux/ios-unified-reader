@@ -53,7 +53,21 @@ struct EBookPreferences: Codable, Hashable, Sendable {
         case dark
     }
 
+    enum ReadingDirection: String, Codable, CaseIterable, Sendable {
+        case automatic
+        case leftToRight
+        case rightToLeft
+    }
+
+    enum PageLayout: String, Codable, CaseIterable, Sendable {
+        case automatic
+        case single
+        case double
+    }
+
     static let defaultReadingModeKey = "EBook.defaultReadingMode"
+    static let defaultReadingDirectionKey = "EBook.defaultReadingDirection"
+    static let defaultPageLayoutKey = "EBook.defaultPageLayout"
     static let defaultThemeKey = "EBook.defaultTheme"
     static let defaultPublisherStylesKey = "EBook.defaultPublisherStyles"
     static let keepScreenAwakeKey = "EBook.keepScreenAwake"
@@ -78,6 +92,8 @@ struct EBookPreferences: Codable, Hashable, Sendable {
     var paragraphIndent: Double
     var paragraphSpacing: Double
     var isScrollEnabled: Bool
+    var readingDirection: ReadingDirection
+    var pageLayout: PageLayout
     var usesPublisherStyles: Bool
     private var typographyUnitsVersion: Int
 
@@ -92,6 +108,8 @@ struct EBookPreferences: Codable, Hashable, Sendable {
         paragraphIndent: Double = 2,
         paragraphSpacing: Double = 5,
         isScrollEnabled: Bool = false,
+        readingDirection: ReadingDirection = .automatic,
+        pageLayout: PageLayout = .automatic,
         usesPublisherStyles: Bool = false
     ) {
         self.theme = theme
@@ -104,6 +122,8 @@ struct EBookPreferences: Codable, Hashable, Sendable {
         self.paragraphIndent = paragraphIndent
         self.paragraphSpacing = paragraphSpacing
         self.isScrollEnabled = isScrollEnabled
+        self.readingDirection = readingDirection
+        self.pageLayout = pageLayout
         self.usesPublisherStyles = usesPublisherStyles
         typographyUnitsVersion = Self.currentTypographyUnitsVersion
     }
@@ -112,6 +132,8 @@ struct EBookPreferences: Codable, Hashable, Sendable {
         migrateGlobalTypographyUnitsIfNeeded()
         UserDefaults.standard.register(defaults: [
             defaultReadingModeKey: "paged",
+            defaultReadingDirectionKey: ReadingDirection.automatic.rawValue,
+            defaultPageLayoutKey: PageLayout.automatic.rawValue,
             defaultThemeKey: Theme.system.rawValue,
             defaultPublisherStylesKey: false,
             keepScreenAwakeKey: false,
@@ -161,6 +183,12 @@ struct EBookPreferences: Codable, Hashable, Sendable {
             paragraphIndent: defaults.double(forKey: defaultParagraphIndentKey),
             paragraphSpacing: defaults.double(forKey: defaultParagraphSpacingKey),
             isScrollEnabled: defaults.string(forKey: defaultReadingModeKey) == "scroll",
+            readingDirection: ReadingDirection(
+                rawValue: defaults.string(forKey: defaultReadingDirectionKey) ?? ""
+            ) ?? .automatic,
+            pageLayout: PageLayout(
+                rawValue: defaults.string(forKey: defaultPageLayoutKey) ?? ""
+            ) ?? .automatic,
             usesPublisherStyles: defaults.bool(forKey: defaultPublisherStylesKey)
         )
     }
@@ -178,6 +206,8 @@ struct EBookPreferences: Codable, Hashable, Sendable {
         defaults.set(preferences.paragraphIndent, forKey: defaultParagraphIndentKey)
         defaults.set(preferences.paragraphSpacing, forKey: defaultParagraphSpacingKey)
         defaults.set(preferences.isScrollEnabled ? "scroll" : "paged", forKey: defaultReadingModeKey)
+        defaults.set(preferences.readingDirection.rawValue, forKey: defaultReadingDirectionKey)
+        defaults.set(preferences.pageLayout.rawValue, forKey: defaultPageLayoutKey)
         defaults.set(preferences.usesPublisherStyles, forKey: defaultPublisherStylesKey)
     }
 
@@ -206,6 +236,8 @@ struct EBookPreferences: Codable, Hashable, Sendable {
         case paragraphIndent
         case paragraphSpacing
         case isScrollEnabled
+        case readingDirection
+        case pageLayout
         case usesPublisherStyles
         case typographyUnitsVersion
     }
@@ -224,6 +256,8 @@ struct EBookPreferences: Codable, Hashable, Sendable {
         paragraphIndent = try container.decodeIfPresent(Double.self, forKey: .paragraphIndent) ?? (usesLegacyUnits ? 0 : 2)
         paragraphSpacing = try container.decodeIfPresent(Double.self, forKey: .paragraphSpacing) ?? (usesLegacyUnits ? 0 : 5)
         isScrollEnabled = try container.decodeIfPresent(Bool.self, forKey: .isScrollEnabled) ?? false
+        readingDirection = try container.decodeIfPresent(ReadingDirection.self, forKey: .readingDirection) ?? .automatic
+        pageLayout = try container.decodeIfPresent(PageLayout.self, forKey: .pageLayout) ?? .automatic
         usesPublisherStyles = try container.decodeIfPresent(Bool.self, forKey: .usesPublisherStyles) ?? true
 
         if usesLegacyUnits {

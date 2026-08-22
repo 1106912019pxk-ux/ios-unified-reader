@@ -930,6 +930,17 @@
 "EBOOK_RESET_TO_GLOBAL" = "Reset to Global Defaults";
 "EBOOK_GLOBAL_SETTINGS_INFO" = "These defaults are separate from manga reader settings. Existing per-book overrides are preserved.";
 "EBOOK_DEFAULT_READING_MODE" = "Default Reading Mode";
+"EBOOK_READING_DIRECTION" = "Page Direction";
+"EBOOK_DIRECTION_AUTO" = "Follow Book";
+"EBOOK_DIRECTION_LTR" = "Left to Right";
+"EBOOK_DIRECTION_RTL" = "Right to Left";
+"EBOOK_PAGE_LAYOUT" = "Page Layout";
+"EBOOK_PAGE_LAYOUT_AUTO" = "Automatic";
+"EBOOK_PAGE_LAYOUT_SINGLE" = "Single Page";
+"EBOOK_PAGE_LAYOUT_DOUBLE" = "Two Pages";
+"EBOOK_DELETE_FONT" = "Delete Imported Font";
+"EBOOK_PAGE_NUMBER" = "Page %d";
+"EBOOK_PAGE_NUMBER_WITH_TOTAL" = "Page %d/%d";
 "EBOOK_DEFAULT_THEME" = "Default Theme";
 "EBOOK_KEEP_SCREEN_AWAKE" = "Keep Screen Awake While Reading";
 "EBOOK_ERROR_EPUB_IS_WEBPAGE" = "The selected .epub is an HTML web page, not an EPUB book. Download the actual book file again.";

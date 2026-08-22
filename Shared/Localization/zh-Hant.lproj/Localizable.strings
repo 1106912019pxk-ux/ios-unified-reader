@@ -768,6 +768,17 @@
 "EBOOK_RESET_TO_GLOBAL" = "恢復全域預設設定";
 "EBOOK_GLOBAL_SETTINGS_INFO" = "這些預設設定與漫畫閱讀器完全分開；已經單獨調整過的書籍會保留自己的設定。";
 "EBOOK_DEFAULT_READING_MODE" = "預設閱讀方式";
+"EBOOK_READING_DIRECTION" = "翻頁方向";
+"EBOOK_DIRECTION_AUTO" = "跟隨書籍";
+"EBOOK_DIRECTION_LTR" = "從左到右";
+"EBOOK_DIRECTION_RTL" = "從右到左";
+"EBOOK_PAGE_LAYOUT" = "頁面配置";
+"EBOOK_PAGE_LAYOUT_AUTO" = "自動配合螢幕";
+"EBOOK_PAGE_LAYOUT_SINGLE" = "始終單頁";
+"EBOOK_PAGE_LAYOUT_DOUBLE" = "始終雙頁";
+"EBOOK_DELETE_FONT" = "刪除匯入字型";
+"EBOOK_PAGE_NUMBER" = "第 %d 頁";
+"EBOOK_PAGE_NUMBER_WITH_TOTAL" = "第 %d/%d 頁";
 "EBOOK_DEFAULT_THEME" = "預設主題";
 "EBOOK_KEEP_SCREEN_AWAKE" = "閱讀時保持螢幕恆亮";
 "EBOOK_ERROR_EPUB_IS_WEBPAGE" = "所選 .epub 實際上是網頁錯誤內容，並不是 EPUB 書籍。請重新下載真正的書籍檔案。";

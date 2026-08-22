@@ -9,6 +9,18 @@ import Combine
 import SwiftUI
 import SwiftUIIntrospect
 
+private final class MoreEmbeddedHostingController<Content: View>: UIHostingController<Content> {
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        navigationController?.setNavigationBarHidden(true, animated: false)
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        navigationController?.setNavigationBarHidden(false, animated: false)
+    }
+}
+
 class TabBarController: UITabBarController {
     private var originalFrame: CGRect = .zero
     private var shrunkFrame: CGRect = .zero
@@ -86,7 +98,7 @@ class TabBarController: UITabBarController {
         let settingsPath = NavigationCoordinator(rootViewController: nil)
         let settingsViewController: UIViewController
         if #available(iOS 26.0, *), UIDevice.current.userInterfaceIdiom != .pad {
-            settingsViewController = UIHostingController(
+            settingsViewController = MoreEmbeddedHostingController(
                 rootView: NavigationStack {
                     SettingsView()
                         .environmentObject(settingsPath)

@@ -789,7 +789,7 @@ final class EBookReaderViewController: UIViewController {
             backgroundColor = ReadiumNavigator.Color(hex: "#111111")
         }
 
-        let readingProgression: ReadiumShared.ReadingProgression?
+        let readingProgression: ReadiumNavigator.ReadingProgression?
         switch preferences.readingDirection {
         case .automatic:
             readingProgression = nil

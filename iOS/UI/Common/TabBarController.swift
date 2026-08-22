@@ -73,7 +73,6 @@ class TabBarController: UITabBarController {
 
         let libraryViewController = NavigationController(rootViewController: LibraryViewController())
         let browseViewController = NavigationController(rootViewController: BrowseViewController())
-        let ebookViewController = NavigationController(rootViewController: EBookLibraryViewController())
         let searchViewController = NavigationController(rootViewController: SearchViewController())
 
         let historyPath = NavigationCoordinator(rootViewController: nil)
@@ -106,7 +105,6 @@ class TabBarController: UITabBarController {
 
         libraryViewController.navigationBar.prefersLargeTitles = true
         browseViewController.navigationBar.prefersLargeTitles = true
-        ebookViewController.navigationBar.prefersLargeTitles = true
         historyViewController.navigationBar.prefersLargeTitles = true
         searchViewController.navigationBar.prefersLargeTitles = true
 
@@ -131,23 +129,16 @@ class TabBarController: UITabBarController {
                     browseViewController
                 },
                 UITab(
-                    title: NSLocalizedString("EBOOKS", value: "Books", comment: "E-book tab title"),
-                    image: UIImage(systemName: "text.book.closed.fill"),
-                    identifier: "2"
-                ) { _ in
-                    ebookViewController
-                },
-                UITab(
                     title: NSLocalizedString("HISTORY"),
                     image: UIImage(systemName: "clock.fill"),
-                    identifier: "3"
+                    identifier: "2"
                 ) { _ in
                     historyViewController
                 },
                 UITab(
                     title: NSLocalizedString("SETTINGS"),
                     image: UIImage(systemName: "gear"),
-                    identifier: "4"
+                    identifier: "3"
                 ) { _ in
                     settingsViewController
                 }
@@ -168,28 +159,22 @@ class TabBarController: UITabBarController {
                 image: UIImage(systemName: "globe"),
                 tag: 1
             )
-            ebookViewController.tabBarItem = UITabBarItem(
-                title: NSLocalizedString("EBOOKS", value: "Books", comment: "E-book tab title"),
-                image: UIImage(systemName: "text.book.closed.fill"),
-                tag: 2
-            )
             historyViewController.tabBarItem = UITabBarItem(
                 tabBarSystemItem: .history,
-                tag: 3
+                tag: 2
             )
             searchViewController.tabBarItem = UITabBarItem(
                 tabBarSystemItem: .search,
-                tag: 4
+                tag: 3
             )
             settingsViewController.tabBarItem = UITabBarItem(
                 title: NSLocalizedString("SETTINGS", comment: ""),
                 image: UIImage(systemName: "gear"),
-                tag: 5
+                tag: 4
             )
             viewControllers = [
                 libraryViewController,
                 browseViewController,
-                ebookViewController,
                 historyViewController,
                 searchViewController,
                 settingsViewController
@@ -345,9 +330,9 @@ extension TabBarController: UITabBarControllerDelegate {
     private func checkForSettingsPop() {
         let settingsIndex: Int
         if #available(iOS 26.0, *) {
-            settingsIndex = 4
+            settingsIndex = 3
         } else {
-            settingsIndex = 5
+            settingsIndex = 4
         }
         if selectedIndex == previousSelectedIndex && previousSelectedIndex == settingsIndex {
             settingsPath?.navigationController?.popToRootViewController(animated: true)

@@ -87,9 +87,13 @@ class TextDoublePageViewController: UIViewController {
     /// geometry. These never change when bars hide/show, so text stays stable.
     private func updateTextInsets() {
         guard let parentReader else { return }
-        let insets = parentReader.textInsets
-        leftTextView.textContainerInset = insets
-        rightTextView.textContainerInset = insets
+        if direction == .rtl {
+            rightTextView.textContainerInset = parentReader.textInsetsForDoublePage(isLeftPage: true)
+            leftTextView.textContainerInset = parentReader.textInsetsForDoublePage(isLeftPage: false)
+        } else {
+            leftTextView.textContainerInset = parentReader.textInsetsForDoublePage(isLeftPage: true)
+            rightTextView.textContainerInset = parentReader.textInsetsForDoublePage(isLeftPage: false)
+        }
     }
 
     private func createTextView() -> UITextView {

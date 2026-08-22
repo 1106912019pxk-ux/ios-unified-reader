@@ -641,13 +641,13 @@ extension Settings {
                         key: "Reader.textTopPadding",
                         title: textReaderLocalized("TEXT_TOP_PADDING", fallback: "Top Padding"),
                         notification: .init("Reader.textTopPadding"),
-                        value: .stepper(.init(minimumValue: 0, maximumValue: 80, stepValue: 2))
+                        value: .stepper(.init(minimumValue: -24, maximumValue: 80, stepValue: 2))
                     ),
                     .init(
                         key: "Reader.textBottomPadding",
                         title: textReaderLocalized("TEXT_BOTTOM_PADDING", fallback: "Bottom Padding"),
                         notification: .init("Reader.textBottomPadding"),
-                        value: .stepper(.init(minimumValue: 0, maximumValue: 80, stepValue: 2))
+                        value: .stepper(.init(minimumValue: -24, maximumValue: 80, stepValue: 2))
                     ),
                     .init(
                         key: "Reader.textParagraphSpacing",

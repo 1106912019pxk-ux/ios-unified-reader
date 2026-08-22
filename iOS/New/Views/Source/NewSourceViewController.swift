@@ -142,7 +142,10 @@ class NewSourceViewController: UIViewController {
         ListingsHeaderView(
             source: source,
             listings: listingsBinding,
-            selectedListing: headerListingSelectionBinding
+            selectedListing: headerListingSelectionBinding,
+            onFilterButtonClick: source.id == "zh.picacomic" || source.key == "zh.picacomic"
+                ? { [weak self] in self?.showSearchView(focusSearch: false) }
+                : nil
         )
     }
 
@@ -405,7 +408,7 @@ extension NewSourceViewController: UINavigationControllerDelegate {
 
 extension NewSourceViewController {
     // show search view, hide listings view
-    func showSearchView() {
+    func showSearchView(focusSearch: Bool = true) {
         // set search view offset to top before we show it
         searchViewController.scrollToTop(animated: false)
 
@@ -457,10 +460,12 @@ extension NewSourceViewController {
             }
         }
 
-        // focus search bar
-        Task { @MainActor in
-            searchController.isActive = true
-            searchController.searchBar.becomeFirstResponder()
+        if focusSearch {
+            // focus search bar
+            Task { @MainActor in
+                searchController.isActive = true
+                searchController.searchBar.becomeFirstResponder()
+            }
         }
     }
 

@@ -24,11 +24,13 @@ jobs:
       - name: Patch Readium Zip for Xcode 26
         run: |
           python3 - <<'PY'
+          import stat
           from pathlib import Path
 
           headers = Path("build/SourcePackages/checkouts/Zip/Zip/minizip/include")
 
           crypt = headers / "crypt.h"
+          crypt.chmod(crypt.stat().st_mode | stat.S_IWUSR)
           text = crypt.read_text()
           old = "register int keyshift"
           if old not in text:
@@ -39,6 +41,7 @@ jobs:
           anchor = "#define Z_BZIP2ED 12"
           for name in ("unzip.h", "zip.h"):
               header = headers / name
+              header.chmod(header.stat().st_mode | stat.S_IWUSR)
               text = header.read_text()
               if opening not in text or anchor not in text:
                   raise RuntimeError(f"Expected Minizip linkage markers were not found in {name}")

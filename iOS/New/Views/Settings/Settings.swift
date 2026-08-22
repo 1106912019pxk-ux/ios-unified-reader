@@ -70,14 +70,6 @@ enum Settings {
                     inlineTitle: true,
                     icon: .system(name: "book.fill", color: "green")
                 ))
-            ),
-            .init(
-                title: NSLocalizedString("EBOOKS", value: "Books", comment: "E-book settings title"),
-                value: .page(.init(
-                    items: ebookSettings,
-                    inlineTitle: true,
-                    icon: .system(name: "text.book.closed.fill", color: "purple")
-                ))
             )
         ] + {
             if #available(iOS 18.0, *) {
@@ -134,6 +126,13 @@ enum Settings {
                 ))
             )
         ]))),
+        .init(
+            title: NSLocalizedString("EBOOKS", value: "Books", comment: "E-book settings title"),
+            value: .group(.init(
+                footer: NSLocalizedString("EBOOK_GLOBAL_SETTINGS_INFO", comment: "Global e-book settings explanation"),
+                items: ebookSettings
+            ))
+        ),
         .init(value: .group(.init(items: [
             .init(
                 key: "About",
@@ -656,80 +655,80 @@ extension Settings {
         EBookPreferences.registerGlobalDefaults()
         return [
             .init(
-                value: .group(.init(
-                    footer: NSLocalizedString("EBOOK_GLOBAL_SETTINGS_INFO", comment: "Global e-book settings explanation"),
-                    items: [
-                        .init(
-                            key: EBookPreferences.defaultReadingModeKey,
-                            title: NSLocalizedString("EBOOK_DEFAULT_READING_MODE", comment: "Default e-book reading mode"),
-                            value: .select(.init(
-                                values: ["paged", "scroll"],
-                                titles: [
-                                    NSLocalizedString("EBOOK_PAGED_READING", comment: "Paginated e-book reading"),
-                                    NSLocalizedString("EBOOK_SCROLL_READING", comment: "Scrolling e-book reading"),
-                                ]
-                            ))
-                        ),
-                        .init(
-                            key: EBookPreferences.defaultThemeKey,
-                            title: NSLocalizedString("EBOOK_DEFAULT_THEME", comment: "Default e-book theme"),
-                            value: .select(.init(
-                                values: EBookPreferences.Theme.allCases.map(\.rawValue),
-                                titles: [
-                                    NSLocalizedString("EBOOK_THEME_SYSTEM", comment: "System e-book theme"),
-                                    NSLocalizedString("EBOOK_THEME_LIGHT", comment: "Light e-book theme"),
-                                    NSLocalizedString("EBOOK_THEME_SEPIA", comment: "Sepia e-book theme"),
-                                    NSLocalizedString("EBOOK_THEME_DARK", comment: "Dark e-book theme"),
-                                ]
-                            ))
-                        ),
-                        .init(
-                            key: EBookPreferences.defaultPublisherStylesKey,
-                            title: NSLocalizedString("EBOOK_USE_PUBLISHER_STYLES", comment: "Use publisher styles setting"),
-                            value: .toggle(.init())
-                        ),
-                        .init(
-                            key: EBookPreferences.defaultFontSizeKey,
-                            title: NSLocalizedString("EBOOK_FONT_SIZE", comment: "Default e-book font size"),
-                            value: .stepper(.init(minimumValue: 0.7, maximumValue: 2, stepValue: 0.05))
-                        ),
-                        .init(
-                            key: EBookPreferences.defaultLineHeightKey,
-                            title: NSLocalizedString("EBOOK_LINE_HEIGHT", comment: "Default e-book line height"),
-                            value: .stepper(.init(minimumValue: 1, maximumValue: 2.4, stepValue: 0.05))
-                        ),
-                        .init(
-                            key: EBookPreferences.defaultPageMarginsKey,
-                            title: NSLocalizedString("EBOOK_HORIZONTAL_MARGINS", comment: "Default e-book horizontal margins"),
-                            value: .stepper(.init(minimumValue: 0, maximumValue: 2, stepValue: 0.1))
-                        ),
-                        .init(
-                            key: EBookPreferences.defaultTopMarginKey,
-                            title: NSLocalizedString("EBOOK_TOP_MARGIN", comment: "Default e-book top margin"),
-                            value: .stepper(.init(minimumValue: 0, maximumValue: 100, stepValue: 2))
-                        ),
-                        .init(
-                            key: EBookPreferences.defaultBottomMarginKey,
-                            title: NSLocalizedString("EBOOK_BOTTOM_MARGIN", comment: "Default e-book bottom margin"),
-                            value: .stepper(.init(minimumValue: 0, maximumValue: 100, stepValue: 2))
-                        ),
-                        .init(
-                            key: EBookPreferences.defaultParagraphIndentKey,
-                            title: NSLocalizedString("EBOOK_PARAGRAPH_INDENT", comment: "Default e-book first-line indent"),
-                            value: .stepper(.init(minimumValue: 0, maximumValue: 4, stepValue: 0.1))
-                        ),
-                        .init(
-                            key: EBookPreferences.defaultParagraphSpacingKey,
-                            title: NSLocalizedString("EBOOK_PARAGRAPH_SPACING", comment: "Default e-book paragraph spacing"),
-                            value: .stepper(.init(minimumValue: 0, maximumValue: 2, stepValue: 0.1))
-                        ),
-                        .init(
-                            key: EBookPreferences.keepScreenAwakeKey,
-                            title: NSLocalizedString("EBOOK_KEEP_SCREEN_AWAKE", comment: "Keep screen awake while reading e-books"),
-                            value: .toggle(.init())
-                        ),
+                key: EBookPreferences.defaultReadingModeKey,
+                title: NSLocalizedString("EBOOK_DEFAULT_READING_MODE", comment: "Default e-book reading mode"),
+                value: .select(.init(
+                    values: ["paged", "scroll"],
+                    titles: [
+                        NSLocalizedString("EBOOK_PAGED_READING", comment: "Paginated e-book reading"),
+                        NSLocalizedString("EBOOK_SCROLL_READING", comment: "Scrolling e-book reading"),
                     ]
                 ))
+            ),
+            .init(
+                key: EBookPreferences.defaultThemeKey,
+                title: NSLocalizedString("EBOOK_DEFAULT_THEME", comment: "Default e-book theme"),
+                value: .select(.init(
+                    values: EBookPreferences.Theme.allCases.map(\.rawValue),
+                    titles: [
+                        NSLocalizedString("EBOOK_THEME_SYSTEM", comment: "System e-book theme"),
+                        NSLocalizedString("EBOOK_THEME_LIGHT", comment: "Light e-book theme"),
+                        NSLocalizedString("EBOOK_THEME_SEPIA", comment: "Sepia e-book theme"),
+                        NSLocalizedString("EBOOK_THEME_GREEN", comment: "Green e-book theme"),
+                        NSLocalizedString("EBOOK_THEME_BLUE", comment: "Blue e-book theme"),
+                        NSLocalizedString("EBOOK_THEME_DARK", comment: "Dark e-book theme"),
+                    ]
+                ))
+            ),
+            .init(
+                key: EBookPreferences.defaultFontFamilyKey,
+                title: NSLocalizedString("EBOOK_DEFAULT_FONT", comment: "Default e-book font"),
+                value: .custom
+            ),
+            .init(
+                key: EBookPreferences.defaultPublisherStylesKey,
+                title: NSLocalizedString("EBOOK_USE_PUBLISHER_STYLES", comment: "Use publisher styles setting"),
+                value: .toggle(.init())
+            ),
+            .init(
+                key: EBookPreferences.defaultFontSizeKey,
+                title: NSLocalizedString("EBOOK_FONT_SIZE", comment: "Default e-book font size"),
+                value: .stepper(.init(minimumValue: 12, maximumValue: 40, stepValue: 1))
+            ),
+            .init(
+                key: EBookPreferences.defaultLineHeightKey,
+                title: NSLocalizedString("EBOOK_LINE_HEIGHT", comment: "Default e-book line height"),
+                value: .stepper(.init(minimumValue: 10, maximumValue: 30, stepValue: 1))
+            ),
+            .init(
+                key: EBookPreferences.defaultPageMarginsKey,
+                title: NSLocalizedString("EBOOK_HORIZONTAL_MARGINS", comment: "Default e-book horizontal margins"),
+                value: .stepper(.init(minimumValue: 0, maximumValue: 50, stepValue: 1))
+            ),
+            .init(
+                key: EBookPreferences.defaultTopMarginKey,
+                title: NSLocalizedString("EBOOK_TOP_MARGIN", comment: "Default e-book top margin"),
+                value: .stepper(.init(minimumValue: 0, maximumValue: 60, stepValue: 1))
+            ),
+            .init(
+                key: EBookPreferences.defaultBottomMarginKey,
+                title: NSLocalizedString("EBOOK_BOTTOM_MARGIN", comment: "Default e-book bottom margin"),
+                value: .stepper(.init(minimumValue: 0, maximumValue: 60, stepValue: 1))
+            ),
+            .init(
+                key: EBookPreferences.defaultParagraphIndentKey,
+                title: NSLocalizedString("EBOOK_PARAGRAPH_INDENT", comment: "Default e-book first-line indent"),
+                value: .stepper(.init(minimumValue: 0, maximumValue: 4, stepValue: 1))
+            ),
+            .init(
+                key: EBookPreferences.defaultParagraphSpacingKey,
+                title: NSLocalizedString("EBOOK_PARAGRAPH_SPACING", comment: "Default e-book paragraph spacing"),
+                value: .stepper(.init(minimumValue: 0, maximumValue: 30, stepValue: 1))
+            ),
+            .init(
+                key: EBookPreferences.keepScreenAwakeKey,
+                title: NSLocalizedString("EBOOK_KEEP_SCREEN_AWAKE", comment: "Keep screen awake while reading e-books"),
+                value: .toggle(.init())
             ),
         ]
     }()

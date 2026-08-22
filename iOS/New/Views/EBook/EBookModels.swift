@@ -48,6 +48,8 @@ struct EBookPreferences: Codable, Hashable, Sendable {
         case system
         case light
         case sepia
+        case green
+        case blue
         case dark
     }
 
@@ -63,6 +65,8 @@ struct EBookPreferences: Codable, Hashable, Sendable {
     static let defaultBottomMarginKey = "EBook.defaultBottomMargin"
     static let defaultParagraphIndentKey = "EBook.defaultParagraphIndent"
     static let defaultParagraphSpacingKey = "EBook.defaultParagraphSpacing"
+    private static let typographyUnitsVersionKey = "EBook.typographyUnitsVersion"
+    private static let currentTypographyUnitsVersion = 2
 
     var theme: Theme
     var fontFamily: String?
@@ -75,19 +79,20 @@ struct EBookPreferences: Codable, Hashable, Sendable {
     var paragraphSpacing: Double
     var isScrollEnabled: Bool
     var usesPublisherStyles: Bool
+    private var typographyUnitsVersion: Int
 
     init(
         theme: Theme = .system,
         fontFamily: String? = nil,
-        fontSize: Double = 1,
-        lineHeight: Double = 1.5,
-        pageMargins: Double = 1,
-        topMargin: Double = 34,
-        bottomMargin: Double = 34,
-        paragraphIndent: Double = 0,
-        paragraphSpacing: Double = 0,
+        fontSize: Double = 24,
+        lineHeight: Double = 15,
+        pageMargins: Double = 25,
+        topMargin: Double = 30,
+        bottomMargin: Double = 20,
+        paragraphIndent: Double = 2,
+        paragraphSpacing: Double = 5,
         isScrollEnabled: Bool = false,
-        usesPublisherStyles: Bool = true
+        usesPublisherStyles: Bool = false
     ) {
         self.theme = theme
         self.fontFamily = fontFamily
@@ -100,23 +105,45 @@ struct EBookPreferences: Codable, Hashable, Sendable {
         self.paragraphSpacing = paragraphSpacing
         self.isScrollEnabled = isScrollEnabled
         self.usesPublisherStyles = usesPublisherStyles
+        typographyUnitsVersion = Self.currentTypographyUnitsVersion
     }
 
     static func registerGlobalDefaults() {
+        migrateGlobalTypographyUnitsIfNeeded()
         UserDefaults.standard.register(defaults: [
             defaultReadingModeKey: "paged",
             defaultThemeKey: Theme.system.rawValue,
-            defaultPublisherStylesKey: true,
+            defaultPublisherStylesKey: false,
             keepScreenAwakeKey: false,
             defaultFontFamilyKey: "",
-            defaultFontSizeKey: 1.0,
-            defaultLineHeightKey: 1.5,
-            defaultPageMarginsKey: 1.0,
-            defaultTopMarginKey: 34.0,
-            defaultBottomMarginKey: 34.0,
-            defaultParagraphIndentKey: 0.0,
-            defaultParagraphSpacingKey: 0.0,
+            defaultFontSizeKey: 24.0,
+            defaultLineHeightKey: 15.0,
+            defaultPageMarginsKey: 25.0,
+            defaultTopMarginKey: 30.0,
+            defaultBottomMarginKey: 20.0,
+            defaultParagraphIndentKey: 2.0,
+            defaultParagraphSpacingKey: 5.0,
+            typographyUnitsVersionKey: currentTypographyUnitsVersion,
         ])
+    }
+
+    private static func migrateGlobalTypographyUnitsIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard defaults.integer(forKey: typographyUnitsVersionKey) < currentTypographyUnitsVersion else { return }
+
+        func migrate(_ key: String, whenAtMost maximum: Double, transform: (Double) -> Double) {
+            guard let number = defaults.object(forKey: key) as? NSNumber else { return }
+            let value = number.doubleValue
+            guard value <= maximum else { return }
+            defaults.set(transform(value), forKey: key)
+        }
+
+        migrate(defaultFontSizeKey, whenAtMost: 3) { $0 * 24 }
+        migrate(defaultLineHeightKey, whenAtMost: 3) { $0 * 10 }
+        migrate(defaultPageMarginsKey, whenAtMost: 4) { $0 * 25 }
+        migrate(defaultParagraphSpacingKey, whenAtMost: 2) { $0 * 10 }
+        defaults.set(false, forKey: defaultPublisherStylesKey)
+        defaults.set(currentTypographyUnitsVersion, forKey: typographyUnitsVersionKey)
     }
 
     static var globalDefaults: Self {
@@ -154,6 +181,15 @@ struct EBookPreferences: Codable, Hashable, Sendable {
         defaults.set(preferences.usesPublisherStyles, forKey: defaultPublisherStylesKey)
     }
 
+    static func saveGlobalDefaultFontFamily(_ familyName: String?) {
+        registerGlobalDefaults()
+        let defaults = UserDefaults.standard
+        defaults.set(familyName ?? "", forKey: defaultFontFamilyKey)
+        if familyName != nil {
+            defaults.set(false, forKey: defaultPublisherStylesKey)
+        }
+    }
+
     static var keepsScreenAwake: Bool {
         registerGlobalDefaults()
         return UserDefaults.standard.bool(forKey: keepScreenAwakeKey)
@@ -171,21 +207,32 @@ struct EBookPreferences: Codable, Hashable, Sendable {
         case paragraphSpacing
         case isScrollEnabled
         case usesPublisherStyles
+        case typographyUnitsVersion
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         theme = try container.decodeIfPresent(Theme.self, forKey: .theme) ?? .system
         fontFamily = try container.decodeIfPresent(String.self, forKey: .fontFamily)
-        fontSize = try container.decodeIfPresent(Double.self, forKey: .fontSize) ?? 1
-        lineHeight = try container.decodeIfPresent(Double.self, forKey: .lineHeight) ?? 1.5
-        pageMargins = try container.decodeIfPresent(Double.self, forKey: .pageMargins) ?? 1
-        topMargin = try container.decodeIfPresent(Double.self, forKey: .topMargin) ?? 34
-        bottomMargin = try container.decodeIfPresent(Double.self, forKey: .bottomMargin) ?? 34
-        paragraphIndent = try container.decodeIfPresent(Double.self, forKey: .paragraphIndent) ?? 0
-        paragraphSpacing = try container.decodeIfPresent(Double.self, forKey: .paragraphSpacing) ?? 0
+        typographyUnitsVersion = try container.decodeIfPresent(Int.self, forKey: .typographyUnitsVersion) ?? 1
+        let usesLegacyUnits = typographyUnitsVersion < Self.currentTypographyUnitsVersion
+        fontSize = try container.decodeIfPresent(Double.self, forKey: .fontSize) ?? (usesLegacyUnits ? 1 : 24)
+        lineHeight = try container.decodeIfPresent(Double.self, forKey: .lineHeight) ?? (usesLegacyUnits ? 1.5 : 15)
+        pageMargins = try container.decodeIfPresent(Double.self, forKey: .pageMargins) ?? (usesLegacyUnits ? 1 : 25)
+        topMargin = try container.decodeIfPresent(Double.self, forKey: .topMargin) ?? (usesLegacyUnits ? 34 : 30)
+        bottomMargin = try container.decodeIfPresent(Double.self, forKey: .bottomMargin) ?? (usesLegacyUnits ? 34 : 20)
+        paragraphIndent = try container.decodeIfPresent(Double.self, forKey: .paragraphIndent) ?? (usesLegacyUnits ? 0 : 2)
+        paragraphSpacing = try container.decodeIfPresent(Double.self, forKey: .paragraphSpacing) ?? (usesLegacyUnits ? 0 : 5)
         isScrollEnabled = try container.decodeIfPresent(Bool.self, forKey: .isScrollEnabled) ?? false
         usesPublisherStyles = try container.decodeIfPresent(Bool.self, forKey: .usesPublisherStyles) ?? true
+
+        if usesLegacyUnits {
+            fontSize *= 24
+            lineHeight *= 10
+            pageMargins *= 25
+            paragraphSpacing *= 10
+            typographyUnitsVersion = Self.currentTypographyUnitsVersion
+        }
     }
 }
 

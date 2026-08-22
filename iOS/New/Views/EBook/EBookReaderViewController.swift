@@ -116,27 +116,11 @@ final class EBookReaderViewController: UIViewController {
         }
         let initialLocation = book.locatorJSON.flatMap { try? Locator(jsonString: $0) }
         let effectivePreferences = store.effectivePreferences(for: book)
-        let preferences = Self.readiumPreferences(from: effectivePreferences)
-        let navigator = try EPUBNavigatorViewController(
+        let navigator = try makeEPUBNavigator(
             publication: publication,
             initialLocation: initialLocation,
-            config: .init(
-                preferences: preferences,
-                disablePageTurnsWhileScrolling: true,
-                contentInset: [
-                    .compact: (
-                        top: CGFloat(effectivePreferences.topMargin),
-                        bottom: CGFloat(effectivePreferences.bottomMargin)
-                    ),
-                    .regular: (
-                        top: CGFloat(effectivePreferences.topMargin),
-                        bottom: CGFloat(effectivePreferences.bottomMargin)
-                    ),
-                ],
-                fontFamilyDeclarations: EBookFontStore.shared.readiumDeclarations(for: effectivePreferences.fontFamily)
-            )
+            preferences: effectivePreferences
         )
-        navigator.delegate = self
 
         self.publication = publication
         epubNavigator = navigator
@@ -153,6 +137,34 @@ final class EBookReaderViewController: UIViewController {
         title = publication.metadata.title ?? book.title
         installChild(navigator)
         configureEPUBButtons()
+    }
+
+    private func makeEPUBNavigator(
+        publication: Publication,
+        initialLocation: Locator?,
+        preferences: EBookPreferences
+    ) throws -> EPUBNavigatorViewController {
+        let navigator = try EPUBNavigatorViewController(
+            publication: publication,
+            initialLocation: initialLocation,
+            config: .init(
+                preferences: Self.readiumPreferences(from: preferences),
+                disablePageTurnsWhileScrolling: true,
+                contentInset: [
+                    .compact: (
+                        top: CGFloat(preferences.topMargin),
+                        bottom: CGFloat(preferences.bottomMargin)
+                    ),
+                    .regular: (
+                        top: CGFloat(preferences.topMargin),
+                        bottom: CGFloat(preferences.bottomMargin)
+                    ),
+                ],
+                fontFamilyDeclarations: EBookFontStore.shared.readiumDeclarations()
+            )
+        )
+        navigator.delegate = self
+        return navigator
     }
 
     private func openPDF(_ book: EBook, at url: URL) throws {
@@ -226,7 +238,13 @@ final class EBookReaderViewController: UIViewController {
             webView.backgroundColor = UIColor(red: 0.067, green: 0.067, blue: 0.067, alpha: 1)
         case .sepia:
             webView.overrideUserInterfaceStyle = .light
-            webView.backgroundColor = UIColor(red: 0.98, green: 0.957, blue: 0.91, alpha: 1)
+            webView.backgroundColor = UIColor(red: 0.949, green: 0.925, blue: 0.855, alpha: 1)
+        case .green:
+            webView.overrideUserInterfaceStyle = .light
+            webView.backgroundColor = UIColor(red: 0.898, green: 0.937, blue: 0.886, alpha: 1)
+        case .blue:
+            webView.overrideUserInterfaceStyle = .light
+            webView.backgroundColor = UIColor(red: 0.898, green: 0.929, blue: 0.949, alpha: 1)
         case .light:
             webView.overrideUserInterfaceStyle = .light
             webView.backgroundColor = .white
@@ -266,13 +284,20 @@ final class EBookReaderViewController: UIViewController {
         let colors: (foreground: String, background: String, scheme: String)
         switch preferences.theme {
         case .dark: colors = ("#f3f3f3", "#111111", "dark")
-        case .sepia: colors = ("#3b3126", "#faf4e8", "light")
+        case .sepia: colors = ("#2d2923", "#f2ecda", "light")
+        case .green: colors = ("#203126", "#e5efe2", "light")
+        case .blue: colors = ("#202b33", "#e5edf2", "light")
         case .light: colors = ("#151515", "#ffffff", "light")
         case .system: colors = ("CanvasText", "Canvas", "light dark")
         }
         let familyName = preferences.fontFamily?.replacingOccurrences(of: "'", with: "\\'")
-        let family = familyName.map { "'\($0)'" } ?? "-apple-system"
-        let horizontalMargin = 18 + preferences.pageMargins * 12
+        let family: String
+        if familyName == EBookFontStore.systemFontFamily {
+            family = "system-ui, -apple-system, sans-serif"
+        } else {
+            family = familyName.map { "'\($0)'" } ?? "serif"
+        }
+        let horizontalMargin = preferences.pageMargins
         let fontFace = webFontFaceCSS(for: preferences.fontFamily)
         let layout: String
         if preferences.isScrollEnabled {
@@ -305,13 +330,13 @@ final class EBookReaderViewController: UIViewController {
         }
         body {
             font-family: \(family) !important;
-            font-size: \(preferences.fontSize)em !important;
-            line-height: \(preferences.lineHeight) !important;
+            font-size: \(preferences.fontSize)px !important;
+            line-height: \(preferences.lineHeight / 10) !important;
             overflow-wrap: anywhere;
         }
         p {
             text-indent: \(preferences.paragraphIndent)em;
-            margin: 0 0 \(preferences.paragraphSpacing)em;
+            margin: 0 0 \(preferences.paragraphSpacing)px;
         }
         img, svg, video { max-width: 100%; height: auto; }
         \(layout)
@@ -580,27 +605,50 @@ final class EBookReaderViewController: UIViewController {
     @objc private func presentPreferences() {
         guard let book = store.book(withID: bookID) else { return }
         let effectivePreferences = store.effectivePreferences(for: book)
+        let originalFontFamily = effectivePreferences.fontFamily
         let view = EBookPreferencesView(
             format: book.format,
             preferences: effectivePreferences
-        ) { [weak self] preferences in
+        ) { [weak self] preferences, didImportFont in
             guard let self else { return }
             store.savePreferences(preferences, for: bookID)
-            apply(preferences)
+            apply(preferences, reloadEPUB: didImportFont || preferences.fontFamily != originalFontFamily)
         } onApplyGlobally: { [weak self] preferences in
             guard let self else { return }
             store.applyGlobalPreferences(preferences)
-            apply(preferences)
+            apply(preferences, reloadEPUB: preferences.fontFamily != originalFontFamily)
         } onReset: { [weak self] in
             guard let self else { return }
             store.resetPreferencesToGlobal(for: bookID)
-            apply(EBookPreferences.globalDefaults)
+            let defaults = EBookPreferences.globalDefaults
+            apply(defaults, reloadEPUB: defaults.fontFamily != originalFontFamily)
         }
         let controller = UIHostingController(rootView: view)
         present(controller, animated: true)
     }
 
-    private func apply(_ preferences: EBookPreferences) {
+    private func apply(_ preferences: EBookPreferences, reloadEPUB: Bool = false) {
+        if reloadEPUB, let publication, epubNavigator != nil {
+            let location = epubNavigator?.currentLocation
+            do {
+                let navigator = try makeEPUBNavigator(
+                    publication: publication,
+                    initialLocation: location,
+                    preferences: preferences
+                )
+                epubNavigator = navigator
+                installChild(navigator)
+                configureEPUBButtons()
+                setReaderBars(hidden: readerBarsHidden, animated: false)
+            } catch {
+                showAlert(
+                    title: NSLocalizedString("EBOOK_READER_ERROR", comment: "E-book reader error title"),
+                    message: error.localizedDescription
+                )
+            }
+            return
+        }
+
         epubNavigator?.submitPreferences(Self.readiumPreferences(from: preferences))
         epubNavigator?.view.setNeedsLayout()
         epubNavigator?.view.layoutIfNeeded()
@@ -621,21 +669,45 @@ final class EBookReaderViewController: UIViewController {
 
     private static func readiumPreferences(from preferences: EBookPreferences) -> EPUBPreferences {
         let theme: ReadiumNavigator.Theme?
+        let textColor: ReadiumNavigator.Color?
+        let backgroundColor: ReadiumNavigator.Color?
         switch preferences.theme {
-        case .system: theme = nil
-        case .light: theme = .light
-        case .sepia: theme = .sepia
-        case .dark: theme = .dark
+        case .system:
+            theme = nil
+            textColor = nil
+            backgroundColor = nil
+        case .light:
+            theme = .light
+            textColor = ReadiumNavigator.Color(hex: "#151515")
+            backgroundColor = ReadiumNavigator.Color(hex: "#FFFFFF")
+        case .sepia:
+            theme = .sepia
+            textColor = ReadiumNavigator.Color(hex: "#2D2923")
+            backgroundColor = ReadiumNavigator.Color(hex: "#F2ECDA")
+        case .green:
+            theme = .light
+            textColor = ReadiumNavigator.Color(hex: "#203126")
+            backgroundColor = ReadiumNavigator.Color(hex: "#E5EFE2")
+        case .blue:
+            theme = .light
+            textColor = ReadiumNavigator.Color(hex: "#202B33")
+            backgroundColor = ReadiumNavigator.Color(hex: "#E5EDF2")
+        case .dark:
+            theme = .dark
+            textColor = ReadiumNavigator.Color(hex: "#F3F3F3")
+            backgroundColor = ReadiumNavigator.Color(hex: "#111111")
         }
         return EPUBPreferences(
+            backgroundColor: backgroundColor,
             fontFamily: preferences.fontFamily.map(FontFamily.init(rawValue:)),
-            fontSize: preferences.fontSize,
-            lineHeight: preferences.lineHeight,
-            pageMargins: preferences.pageMargins,
+            fontSize: preferences.fontSize / 24,
+            lineHeight: preferences.lineHeight / 10,
+            pageMargins: preferences.pageMargins / 25,
             paragraphIndent: preferences.paragraphIndent,
-            paragraphSpacing: preferences.paragraphSpacing,
+            paragraphSpacing: preferences.paragraphSpacing / 10,
             publisherStyles: preferences.usesPublisherStyles,
             scroll: preferences.isScrollEnabled,
+            textColor: textColor,
             theme: theme
         )
     }
@@ -899,6 +971,10 @@ private extension EBookPreferences.Theme {
             NSLocalizedString("EBOOK_THEME_LIGHT", comment: "Light e-book theme")
         case .sepia:
             NSLocalizedString("EBOOK_THEME_SEPIA", comment: "Sepia e-book theme")
+        case .green:
+            NSLocalizedString("EBOOK_THEME_GREEN", comment: "Green e-book theme")
+        case .blue:
+            NSLocalizedString("EBOOK_THEME_BLUE", comment: "Blue e-book theme")
         case .dark:
             NSLocalizedString("EBOOK_THEME_DARK", comment: "Dark e-book theme")
         }
@@ -911,12 +987,13 @@ private struct EBookPreferencesView: View {
 
     let format: EBookFormat
     @State var preferences: EBookPreferences
-    let onSave: (EBookPreferences) -> Void
+    let onSave: (EBookPreferences, Bool) -> Void
     let onApplyGlobally: (EBookPreferences) -> Void
     let onReset: () -> Void
 
     @State private var isImportingFont = false
     @State private var fontMessage: String?
+    @State private var didImportFont = false
 
     var body: some View {
         NavigationView {
@@ -927,12 +1004,12 @@ private struct EBookPreferencesView: View {
                             Text($0.localizedName).tag($0)
                         }
                     }
-                    Picker(NSLocalizedString("EBOOK_FONT", comment: "E-book font setting"), selection: $preferences.fontFamily) {
+                    Picker(NSLocalizedString("EBOOK_FONT", comment: "E-book font setting"), selection: fontFamilyBinding) {
                         Text(NSLocalizedString("EBOOK_BOOK_DEFAULT_FONT", comment: "Use book default font option")).tag(String?.none)
-                        Text("Iowan Old Style").tag(String?.some("Iowan Old Style"))
-                        Text("Athelas").tag(String?.some("Athelas"))
-                        Text("Georgia").tag(String?.some("Georgia"))
-                        Text("Helvetica Neue").tag(String?.some("Helvetica Neue"))
+                        Text(NSLocalizedString("EBOOK_SYSTEM_FONT", comment: "System e-book font")).tag(String?.some(EBookFontStore.systemFontFamily))
+                        ForEach(EBookFontStore.builtInFontFamilies, id: \.self) { family in
+                            Text(family).tag(String?.some(family))
+                        }
                         ForEach(fontStore.fonts) { font in
                             Text(font.familyName).tag(String?.some(font.familyName))
                         }
@@ -942,16 +1019,24 @@ private struct EBookPreferencesView: View {
                     } label: {
                         Label(NSLocalizedString("EBOOK_IMPORT_FONT", comment: "Import e-book font action"), systemImage: "text.badge.plus")
                     }
+                    if let familyName = preferences.fontFamily {
+                        Button {
+                            EBookPreferences.saveGlobalDefaultFontFamily(familyName)
+                            fontMessage = NSLocalizedString("EBOOK_DEFAULT_FONT_UPDATED", comment: "Default e-book font updated")
+                        } label: {
+                            Label(NSLocalizedString("EBOOK_SET_AS_DEFAULT_FONT", comment: "Set selected font as the e-book default"), systemImage: "checkmark.circle")
+                        }
+                    }
                 }
 
                 Section(NSLocalizedString("EBOOK_TYPOGRAPHY", comment: "E-book typography settings section")) {
-                    valueSlider(NSLocalizedString("EBOOK_FONT_SIZE", comment: "E-book font size setting"), value: $preferences.fontSize, range: 0.7 ... 2, step: 0.05)
-                    valueSlider(NSLocalizedString("EBOOK_LINE_HEIGHT", comment: "E-book line height setting"), value: $preferences.lineHeight, range: 1 ... 2.4, step: 0.05)
-                    valueSlider(NSLocalizedString("EBOOK_HORIZONTAL_MARGINS", comment: "E-book horizontal margins setting"), value: $preferences.pageMargins, range: 0 ... 2, step: 0.1)
-                    valueSlider(NSLocalizedString("EBOOK_TOP_MARGIN", comment: "E-book top margin setting"), value: $preferences.topMargin, range: 0 ... 100, step: 2)
-                    valueSlider(NSLocalizedString("EBOOK_BOTTOM_MARGIN", comment: "E-book bottom margin setting"), value: $preferences.bottomMargin, range: 0 ... 100, step: 2)
-                    valueSlider(NSLocalizedString("EBOOK_PARAGRAPH_INDENT", comment: "E-book paragraph indent setting"), value: $preferences.paragraphIndent, range: 0 ... 4, step: 0.1)
-                    valueSlider(NSLocalizedString("EBOOK_PARAGRAPH_SPACING", comment: "E-book paragraph spacing setting"), value: $preferences.paragraphSpacing, range: 0 ... 2, step: 0.1)
+                    valueStepper(NSLocalizedString("EBOOK_FONT_SIZE", comment: "E-book font size setting"), value: typographyBinding(\.fontSize), range: 12 ... 40, step: 1)
+                    valueStepper(NSLocalizedString("EBOOK_LINE_HEIGHT", comment: "E-book line height setting"), value: typographyBinding(\.lineHeight), range: 10 ... 30, step: 1)
+                    valueStepper(NSLocalizedString("EBOOK_HORIZONTAL_MARGINS", comment: "E-book horizontal margins setting"), value: typographyBinding(\.pageMargins), range: 0 ... 50, step: 1)
+                    valueStepper(NSLocalizedString("EBOOK_TOP_MARGIN", comment: "E-book top margin setting"), value: typographyBinding(\.topMargin), range: 0 ... 60, step: 1)
+                    valueStepper(NSLocalizedString("EBOOK_BOTTOM_MARGIN", comment: "E-book bottom margin setting"), value: typographyBinding(\.bottomMargin), range: 0 ... 60, step: 1)
+                    valueStepper(NSLocalizedString("EBOOK_PARAGRAPH_INDENT", comment: "E-book paragraph indent setting"), value: typographyBinding(\.paragraphIndent), range: 0 ... 4, step: 1, suffix: NSLocalizedString("EBOOK_CHARACTERS", comment: "Character unit"))
+                    valueStepper(NSLocalizedString("EBOOK_PARAGRAPH_SPACING", comment: "E-book paragraph spacing setting"), value: typographyBinding(\.paragraphSpacing), range: 0 ... 30, step: 1)
                 }
 
                 Section(NSLocalizedString("EBOOK_LAYOUT", comment: "E-book layout settings section")) {
@@ -960,7 +1045,10 @@ private struct EBookPreferencesView: View {
                         Text(NSLocalizedString("EBOOK_SCROLL_READING", comment: "Scrolling e-book reading")).tag(true)
                     }
                     if format == .epub || format == .html {
-                        Toggle(NSLocalizedString("EBOOK_USE_PUBLISHER_STYLES", comment: "Use publisher styles setting"), isOn: $preferences.usesPublisherStyles)
+                        Picker(NSLocalizedString("EBOOK_LAYOUT_STYLE", comment: "E-book layout style"), selection: $preferences.usesPublisherStyles) {
+                            Text(NSLocalizedString("EBOOK_FOLLOW_BOOK_LAYOUT", comment: "Follow book layout option")).tag(true)
+                            Text(NSLocalizedString("EBOOK_CUSTOM_LAYOUT", comment: "Custom e-book layout option")).tag(false)
+                        }
                     }
                 }
 
@@ -993,7 +1081,7 @@ private struct EBookPreferencesView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(NSLocalizedString("SAVE", comment: "")) {
-                        onSave(preferences)
+                        onSave(preferences, didImportFont)
                         dismiss()
                     }
                 }
@@ -1008,14 +1096,13 @@ private struct EBookPreferencesView: View {
                 guard !urls.isEmpty else { return }
                 do {
                     let importedFonts = try fontStore.importFonts(urls)
+                    didImportFont = true
                     if let font = importedFonts.first {
                         preferences.fontFamily = font.familyName
-                        onApplyGlobally(preferences)
-                        fontMessage = format == .epub
-                            ? NSLocalizedString("EBOOK_FONT_IMPORTED_GLOBAL_REOPEN", comment: "Global font import success requiring EPUB reopen")
-                            : NSLocalizedString("EBOOK_FONT_IMPORTED_GLOBAL", comment: "Global font import success")
+                        preferences.usesPublisherStyles = false
+                        fontMessage = NSLocalizedString("EBOOK_FONT_IMPORTED_SELECTED", comment: "Imported font selected for current book")
                     } else {
-                        fontMessage = NSLocalizedString("EBOOK_FONT_IMPORTED_GLOBAL", comment: "Global font import success")
+                        fontMessage = NSLocalizedString("EBOOK_FONT_IMPORTED_AVAILABLE", comment: "Imported font available message")
                     }
                 } catch {
                     fontMessage = error.localizedDescription
@@ -1025,22 +1112,44 @@ private struct EBookPreferencesView: View {
     }
 
     @ViewBuilder
-    private func valueSlider(
+    private func valueStepper(
         _ title: String,
         value: Binding<Double>,
         range: ClosedRange<Double>,
-        step: Double
+        step: Double,
+        suffix: String? = nil
     ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        Stepper(value: value, in: range, step: step) {
             HStack {
                 Text(title)
                 Spacer()
-                Text(value.wrappedValue.formatted(.number.precision(.fractionLength(1))))
+                Text(value.wrappedValue.formatted(.number.precision(.fractionLength(0))) + (suffix.map { " \($0)" } ?? ""))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
-            Slider(value: value, in: range, step: step)
         }
+    }
+
+    private func typographyBinding(_ keyPath: WritableKeyPath<EBookPreferences, Double>) -> Binding<Double> {
+        Binding(
+            get: { preferences[keyPath: keyPath] },
+            set: { newValue in
+                preferences[keyPath: keyPath] = newValue
+                preferences.usesPublisherStyles = false
+            }
+        )
+    }
+
+    private var fontFamilyBinding: Binding<String?> {
+        Binding(
+            get: { preferences.fontFamily },
+            set: { familyName in
+                preferences.fontFamily = familyName
+                if familyName != nil {
+                    preferences.usesPublisherStyles = false
+                }
+            }
+        )
     }
 
     private static var fontContentTypes: [UTType] {

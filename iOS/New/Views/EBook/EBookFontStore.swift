@@ -8,6 +8,9 @@ import Combine
 import Foundation
 import ReadiumNavigator
 import ReadiumShared
+import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
 
 @MainActor
 final class EBookFontStore: ObservableObject {
@@ -19,6 +22,22 @@ final class EBookFontStore: ObservableObject {
     }
 
     static let shared = EBookFontStore()
+    static let systemFontFamily = "system-ui"
+
+    static var builtInFontFamilies: [String] {
+        let available = Set(UIFont.familyNames)
+        return [
+            "PingFang SC",
+            "PingFang TC",
+            "Songti SC",
+            "Songti TC",
+            "Kaiti SC",
+            "Kaiti TC",
+            "Hiragino Sans",
+            "Hiragino Mincho ProN",
+            "Helvetica Neue",
+        ].filter(available.contains)
+    }
 
     @Published private(set) var fonts: [Font] = []
 
@@ -82,16 +101,14 @@ final class EBookFontStore: ObservableObject {
         .sorted { $0.familyName.localizedCaseInsensitiveCompare($1.familyName) == .orderedAscending }
     }
 
-    func readiumDeclarations(for familyName: String?) -> [AnyHTMLFontFamilyDeclaration] {
-        guard let font = font(named: familyName),
-              let url = FileURL(url: font.url)
-        else { return [] }
-        return [
+    func readiumDeclarations() -> [AnyHTMLFontFamilyDeclaration] {
+        fonts.compactMap { font in
+            guard let url = FileURL(url: font.url) else { return nil }
             CSSFontFamilyDeclaration(
                 fontFamily: FontFamily(rawValue: font.familyName),
                 fontFaces: [CSSFontFace(file: url)]
-            ).eraseToAnyHTMLFontFamilyDeclaration(),
-        ]
+            ).eraseToAnyHTMLFontFamilyDeclaration()
+        }
     }
 
     private func normalizeFontFileName(_ url: URL) -> URL {
@@ -113,5 +130,120 @@ final class EBookFontStore: ObservableObject {
             candidate = fontsDirectory.appendingPathComponent("\(UUID().uuidString).\(ext)")
         } while fileManager.fileExists(atPath: candidate.path)
         return candidate
+    }
+}
+
+@MainActor
+struct EBookDefaultFontSettingView: View {
+    @ObservedObject private var fontStore = EBookFontStore.shared
+
+    @State private var selectedFamily: String?
+    @State private var isImporting = false
+    @State private var message: String?
+
+    init() {
+        EBookPreferences.registerGlobalDefaults()
+        let family = UserDefaults.standard.string(forKey: EBookPreferences.defaultFontFamilyKey)
+        _selectedFamily = State(initialValue: family?.isEmpty == false ? family : nil)
+    }
+
+    var body: some View {
+        HStack {
+            Text(NSLocalizedString("EBOOK_DEFAULT_FONT", comment: "Default e-book font setting"))
+            Spacer()
+            Menu {
+                fontButton(
+                    title: NSLocalizedString("EBOOK_BOOK_DEFAULT_FONT", comment: "Use book default font option"),
+                    familyName: nil
+                )
+                fontButton(
+                    title: NSLocalizedString("EBOOK_SYSTEM_FONT", comment: "System e-book font"),
+                    familyName: EBookFontStore.systemFontFamily
+                )
+
+                if !EBookFontStore.builtInFontFamilies.isEmpty {
+                    Section(NSLocalizedString("EBOOK_BUILT_IN_FONTS", comment: "Built-in e-book fonts")) {
+                        ForEach(EBookFontStore.builtInFontFamilies, id: \.self) { family in
+                            fontButton(title: family, familyName: family)
+                        }
+                    }
+                }
+
+                if !fontStore.fonts.isEmpty {
+                    Section(NSLocalizedString("EBOOK_IMPORTED_FONTS", comment: "Imported e-book fonts")) {
+                        ForEach(fontStore.fonts) { font in
+                            fontButton(title: font.familyName, familyName: font.familyName)
+                        }
+                    }
+                }
+
+                Divider()
+                Button {
+                    isImporting = true
+                } label: {
+                    Label(NSLocalizedString("EBOOK_IMPORT_FONT", comment: "Import e-book font action"), systemImage: "text.badge.plus")
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(displayName(for: selectedFamily))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .sheet(isPresented: $isImporting) {
+            DocumentPickerView(
+                allowedContentTypes: Self.fontContentTypes,
+                allowsMultipleSelection: true
+            ) { urls in
+                isImporting = false
+                guard !urls.isEmpty else { return }
+                do {
+                    _ = try fontStore.importFonts(urls)
+                    message = NSLocalizedString("EBOOK_FONT_IMPORTED_AVAILABLE", comment: "Imported font available message")
+                } catch {
+                    message = error.localizedDescription
+                }
+            }
+        }
+        .alert(NSLocalizedString("EBOOK_FONT", comment: "E-book font setting"), isPresented: Binding(
+            get: { message != nil },
+            set: { if !$0 { message = nil } }
+        )) {
+            Button(NSLocalizedString("OK", comment: ""), role: .cancel) {}
+        } message: {
+            Text(message ?? "")
+        }
+    }
+
+    @ViewBuilder
+    private func fontButton(title: String, familyName: String?) -> some View {
+        Button {
+            selectedFamily = familyName
+            EBookPreferences.saveGlobalDefaultFontFamily(familyName)
+        } label: {
+            if selectedFamily == familyName {
+                Label(title, systemImage: "checkmark")
+            } else {
+                Text(title)
+            }
+        }
+    }
+
+    private static var fontContentTypes: [UTType] {
+        ["ttf", "otf"].compactMap { UTType(filenameExtension: $0) }
+    }
+
+    private func displayName(for familyName: String?) -> String {
+        guard let familyName else {
+            return NSLocalizedString("EBOOK_BOOK_DEFAULT_FONT", comment: "Use book default font option")
+        }
+        if familyName == EBookFontStore.systemFontFamily {
+            return NSLocalizedString("EBOOK_SYSTEM_FONT", comment: "System e-book font")
+        }
+        return familyName
     }
 }

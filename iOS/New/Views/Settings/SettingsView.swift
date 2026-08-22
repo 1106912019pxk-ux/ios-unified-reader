@@ -153,6 +153,15 @@ extension SettingsView {
                     UIApplication.shared.firstKeyWindow?.overrideUserInterfaceStyle = .unspecified
                 }
 
+            case EBookPreferences.defaultFontSizeKey,
+                 EBookPreferences.defaultLineHeightKey,
+                 EBookPreferences.defaultPageMarginsKey,
+                 EBookPreferences.defaultTopMarginKey,
+                 EBookPreferences.defaultBottomMarginKey,
+                 EBookPreferences.defaultParagraphIndentKey,
+                 EBookPreferences.defaultParagraphSpacingKey:
+                UserDefaults.standard.set(false, forKey: EBookPreferences.defaultPublisherStylesKey)
+
             case "Logs.logServer":
                 Task {
                     let url = UserDefaults.standard.string(forKey: "Logs.logServer").flatMap(URL.init)
@@ -320,6 +329,8 @@ extension SettingsView {
     func customContentHandler(_ setting: Setting) -> some View {
         if setting.key == "Appearance.layout" {
             LayoutSettingView()
+        } else if setting.key == EBookPreferences.defaultFontFamilyKey {
+            EBookDefaultFontSettingView()
         } else if setting.key == "Library.defaultCategory" {
             let newSetting = {
                 var setting = setting

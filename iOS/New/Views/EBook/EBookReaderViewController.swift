@@ -412,7 +412,7 @@ final class EBookReaderViewController: UIViewController {
         )
     }
 
-    private static func flatten(_ links: [Link], depth: Int = 0) -> [EBookContentsEntry] {
+    private static func flatten(_ links: [ReadiumShared.Link], depth: Int = 0) -> [EBookContentsEntry] {
         links.flatMap { link in
             [EBookContentsEntry(link: link, depth: depth)] + flatten(link.children, depth: depth + 1)
         }
@@ -443,7 +443,7 @@ extension EBookReaderViewController: EPUBNavigatorDelegate {
 
 struct EBookContentsEntry: Identifiable {
     let id = UUID()
-    let link: Link
+    let link: ReadiumShared.Link
     let depth: Int
 }
 

@@ -104,7 +104,7 @@ final class EBookFontStore: ObservableObject {
     func readiumDeclarations() -> [AnyHTMLFontFamilyDeclaration] {
         fonts.compactMap { font in
             guard let url = FileURL(url: font.url) else { return nil }
-            CSSFontFamilyDeclaration(
+            return CSSFontFamilyDeclaration(
                 fontFamily: FontFamily(rawValue: font.familyName),
                 fontFaces: [CSSFontFace(file: url)]
             ).eraseToAnyHTMLFontFamilyDeclaration()

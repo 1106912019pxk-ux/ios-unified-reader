@@ -204,64 +204,6 @@ struct TextReaderFontSettingView: View {
     }
 }
 
-/// Auto reading is intentionally a scroll-reader feature. Enabling it from the
-/// paged reader switches the text reader to scrolling before starting playback.
-struct TextReaderAutoScrollSettingView: View {
-    @AppStorage("Reader.textAutoScrollEnabled") private var isEnabled = false
-    @AppStorage("Reader.textAutoScrollSpeed") private var speed = 1.0
-
-    private let minimumSpeed = 0.5
-    private let maximumSpeed = 4.0
-    private let speedStep = 0.25
-
-    var body: some View {
-        Toggle(
-            textReaderLocalized("TEXT_AUTO_SCROLL", fallback: "Auto Reading"),
-            isOn: $isEnabled
-        )
-        .onChange(of: isEnabled) { enabled in
-            if enabled {
-                UserDefaults.standard.set("scroll", forKey: "Reader.textReaderStyle")
-                NotificationCenter.default.post(name: .init("Reader.textReaderStyle"), object: "scroll")
-            }
-            NotificationCenter.default.post(name: .init("Reader.textAutoScrollEnabled"), object: enabled)
-        }
-
-        if isEnabled {
-            HStack {
-                Text(textReaderLocalized("TEXT_AUTO_SCROLL_SPEED", fallback: "Auto Reading Speed"))
-                Spacer()
-                Button {
-                    changeSpeed(by: -speedStep)
-                } label: {
-                    Image(systemName: "minus")
-                        .frame(width: 32, height: 32)
-                }
-                .buttonStyle(.borderless)
-                .disabled(speed <= minimumSpeed)
-
-                Text("\(speed.formatted(.number.precision(.fractionLength(2))))×")
-                    .monospacedDigit()
-                    .frame(minWidth: 48)
-
-                Button {
-                    changeSpeed(by: speedStep)
-                } label: {
-                    Image(systemName: "plus")
-                        .frame(width: 32, height: 32)
-                }
-                .buttonStyle(.borderless)
-                .disabled(speed >= maximumSpeed)
-            }
-        }
-    }
-
-    private func changeSpeed(by amount: Double) {
-        speed = min(maximumSpeed, max(minimumSpeed, (speed + amount) * 4).rounded() / 4)
-        NotificationCenter.default.post(name: .init("Reader.textAutoScrollSpeed"), object: speed)
-    }
-}
-
 struct ReaderSettingsView: View {
     let mangaId: MangaIdentifier
     let reader: ReaderViewController.Reader
@@ -515,7 +457,6 @@ struct ReaderSettingsView: View {
                                 ))
                             )
                         )
-                        TextReaderAutoScrollSettingView()
                         TextReaderFontSettingView(title: NSLocalizedString("TEXT_FONT_FAMILY"))
                         SettingView(
                             setting: .init(

@@ -315,7 +315,11 @@ final class EBookReaderViewController: UIViewController {
         if book.bookmarks.contains(where: { $0.locatorJSON == json }) {
             store.removeBookmark(locatorJSON: json, from: bookID)
         } else {
-            store.addBookmark(\n                title: locator.title ?? NSLocalizedString("EBOOK_BOOKMARK", comment: "Default e-book bookmark title"),\n                locatorJSON: json,\n                to: bookID\n            )
+            store.addBookmark(
+                title: locator.title ?? NSLocalizedString("EBOOK_BOOKMARK", comment: "Default e-book bookmark title"),
+                locatorJSON: json,
+                to: bookID
+            )
         }
         book = store.book(withID: bookID) ?? book
         updateBookmarkButton(book: book)
@@ -356,7 +360,10 @@ final class EBookReaderViewController: UIViewController {
                 )
                 present(navigationController, animated: true)
             } catch {
-                showAlert(\n                    title: NSLocalizedString("EBOOK_CONTENTS_UNAVAILABLE", comment: "E-book contents unavailable error title"),\n                    message: error.localizedDescription\n                )
+                showAlert(
+                    title: NSLocalizedString("EBOOK_CONTENTS_UNAVAILABLE", comment: "E-book contents unavailable error title"),
+                    message: error.localizedDescription
+                )
             }
         }
     }
@@ -427,7 +434,10 @@ extension EBookReaderViewController: EPUBNavigatorDelegate {
     }
 
     func navigator(_ navigator: Navigator, presentError error: NavigatorError) {
-        showAlert(\n            title: NSLocalizedString("EBOOK_READER_ERROR", comment: "E-book reader error title"),\n            message: error.localizedDescription\n        )
+        showAlert(
+            title: NSLocalizedString("EBOOK_READER_ERROR", comment: "E-book reader error title"),
+            message: error.localizedDescription
+        )
     }
 }
 

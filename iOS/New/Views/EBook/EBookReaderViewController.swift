@@ -21,6 +21,8 @@ final class EBookReaderViewController: UIViewController {
     private var epubNavigator: EPUBNavigatorViewController?
     private var pdfView: PDFView?
     private var webView: WKWebView?
+    private var webTapGesture: UITapGestureRecognizer?
+    private var webIsPaginated = false
     private var pageChangeObserver: NSObjectProtocol?
     private var bookmarkButton: UIBarButtonItem?
     private var readerBarsHidden = false
@@ -109,6 +111,9 @@ final class EBookReaderViewController: UIViewController {
 
     private func openEPUB(_ book: EBook, at url: URL) async throws {
         let publication = try await EBookReadiumService.shared.openEPUB(at: url, sender: self)
+        guard !publication.readingOrder.isEmpty else {
+            throw EBookReaderError.emptyReadingOrder
+        }
         let initialLocation = book.locatorJSON.flatMap { try? Locator(jsonString: $0) }
         let effectivePreferences = store.effectivePreferences(for: book)
         let preferences = Self.readiumPreferences(from: effectivePreferences)
@@ -128,7 +133,7 @@ final class EBookReaderViewController: UIViewController {
                         bottom: CGFloat(effectivePreferences.bottomMargin)
                     ),
                 ],
-                fontFamilyDeclarations: EBookFontStore.shared.readiumDeclarations()
+                fontFamilyDeclarations: EBookFontStore.shared.readiumDeclarations(for: effectivePreferences.fontFamily)
             )
         )
         navigator.delegate = self
@@ -187,26 +192,56 @@ final class EBookReaderViewController: UIViewController {
         configuration.defaultWebpagePreferences.allowsContentJavaScript = false
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.isOpaque = false
-        webView.backgroundColor = .systemBackground
+        webView.navigationDelegate = self
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
+        webView.scrollView.isDirectionalLockEnabled = true
+
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleWebTap(_:)))
+        tapGesture.cancelsTouchesInView = false
+        tapGesture.delegate = self
+        webView.addGestureRecognizer(tapGesture)
+        webTapGesture = tapGesture
+
         installContentView(webView)
         self.webView = webView
         loadWebDocument(book, at: url)
-        navigationItem.rightBarButtonItems = [
-            UIBarButtonItem(
-                image: UIImage(systemName: "textformat.size"),
-                style: .plain,
-                target: self,
-                action: #selector(presentPreferences)
-            ),
-        ]
+        configureWebButtons()
     }
 
     private func loadWebDocument(_ book: EBook, at url: URL) {
         guard let webView else { return }
-        let css = webCSS(for: store.effectivePreferences(for: book))
+        let preferences = store.effectivePreferences(for: book)
+        let css = webCSS(for: preferences)
+        webIsPaginated = !preferences.isScrollEnabled
+        webView.scrollView.isPagingEnabled = webIsPaginated
+        webView.scrollView.alwaysBounceHorizontal = webIsPaginated
+        webView.scrollView.alwaysBounceVertical = !webIsPaginated
+        webView.scrollView.showsHorizontalScrollIndicator = false
+        webView.scrollView.showsVerticalScrollIndicator = !webIsPaginated
+        webView.scrollView.setContentOffset(.zero, animated: false)
+
+        switch preferences.theme {
+        case .dark:
+            webView.overrideUserInterfaceStyle = .dark
+            webView.backgroundColor = UIColor(red: 0.067, green: 0.067, blue: 0.067, alpha: 1)
+        case .sepia:
+            webView.overrideUserInterfaceStyle = .light
+            webView.backgroundColor = UIColor(red: 0.98, green: 0.957, blue: 0.91, alpha: 1)
+        case .light:
+            webView.overrideUserInterfaceStyle = .light
+            webView.backgroundColor = .white
+        case .system:
+            webView.overrideUserInterfaceStyle = .unspecified
+            webView.backgroundColor = .systemBackground
+        }
+        webView.scrollView.backgroundColor = webView.backgroundColor
+
         if book.format == .html {
             let script = """
+            const previous = document.getElementById('aidoku-ebook-style');
+            if (previous) previous.remove();
             const style = document.createElement('style');
+            style.id = 'aidoku-ebook-style';
             style.textContent = \(Self.javascriptString(css));
             document.head.appendChild(style);
             """
@@ -219,35 +254,94 @@ final class EBookReaderViewController: UIViewController {
             webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         } else {
             let text = (try? String(contentsOf: url)) ?? ""
-            let escaped = text
-                .replacingOccurrences(of: "&", with: "&amp;")
-                .replacingOccurrences(of: "<", with: "&lt;")
-                .replacingOccurrences(of: ">", with: "&gt;")
             let html = """
-            <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-            <style>\(css)</style></head><body><article>\(escaped)</article></body></html>
+            <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+            <style>\(css)</style></head><body><article>\(plainTextHTML(text))</article></body></html>
             """
-            webView.loadHTMLString(html, baseURL: url.deletingLastPathComponent())
+            webView.loadHTMLString(html, baseURL: EBookFontStore.shared.fontsDirectory)
         }
     }
 
     private func webCSS(for preferences: EBookPreferences) -> String {
-        let colors: (foreground: String, background: String)
+        let colors: (foreground: String, background: String, scheme: String)
         switch preferences.theme {
-        case .dark: colors = ("#f3f3f3", "#111111")
-        case .sepia: colors = ("#3b3126", "#faf4e8")
-        case .light: colors = ("#151515", "#ffffff")
-        case .system: colors = ("CanvasText", "Canvas")
+        case .dark: colors = ("#f3f3f3", "#111111", "dark")
+        case .sepia: colors = ("#3b3126", "#faf4e8", "light")
+        case .light: colors = ("#151515", "#ffffff", "light")
+        case .system: colors = ("CanvasText", "Canvas", "light dark")
         }
-        let family = preferences.fontFamily.map { "'\($0.replacingOccurrences(of: "'", with: "\\'"))'" } ?? "-apple-system"
+        let familyName = preferences.fontFamily?.replacingOccurrences(of: "'", with: "\\'")
+        let family = familyName.map { "'\($0)'" } ?? "-apple-system"
+        let horizontalMargin = 18 + preferences.pageMargins * 12
+        let fontFace = webFontFaceCSS(for: preferences.fontFamily)
+        let layout: String
+        if preferences.isScrollEnabled {
+            layout = """
+            html, body { min-height: 100%; overflow-x: hidden !important; overflow-y: auto !important; }
+            body { padding: \(preferences.topMargin)px \(horizontalMargin)px \(preferences.bottomMargin)px; }
+            article { max-width: 48rem; margin: 0 auto; }
+            """
+        } else {
+            layout = """
+            html, body { width: 100%; height: 100%; overflow: hidden !important; }
+            body {
+                height: 100vh;
+                padding: \(preferences.topMargin)px \(horizontalMargin)px \(preferences.bottomMargin)px;
+                column-width: calc(100vw - \(horizontalMargin * 2)px);
+                column-gap: \(horizontalMargin * 2)px;
+                column-fill: auto;
+            }
+            article { width: auto; max-width: none; margin: 0; }
+            """
+        }
         return """
-        :root { color-scheme: light dark; }
-        html, body { margin: 0; padding: 0; background: \(colors.background); color: \(colors.foreground); }
-        body { font-family: \(family); font-size: \(preferences.fontSize)em; line-height: \(preferences.lineHeight); }
-        article { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 48rem; margin: auto; padding: \(preferences.topMargin)px \(1.2 * preferences.pageMargins)rem \(preferences.bottomMargin)px; }
-        p { text-indent: \(preferences.paragraphIndent)rem; margin-block: \(preferences.paragraphSpacing)rem; }
+        \(fontFace)
+        :root { color-scheme: \(colors.scheme); }
+        * { box-sizing: border-box; -webkit-text-size-adjust: 100%; }
+        html, body {
+            margin: 0 !important;
+            background: \(colors.background) !important;
+            color: \(colors.foreground) !important;
+        }
+        body {
+            font-family: \(family) !important;
+            font-size: \(preferences.fontSize)em !important;
+            line-height: \(preferences.lineHeight) !important;
+            overflow-wrap: anywhere;
+        }
+        p {
+            text-indent: \(preferences.paragraphIndent)em;
+            margin: 0 0 \(preferences.paragraphSpacing)em;
+        }
         img, svg, video { max-width: 100%; height: auto; }
+        \(layout)
         """
+    }
+
+    private func webFontFaceCSS(for familyName: String?) -> String {
+        guard let font = EBookFontStore.shared.font(named: familyName),
+              let data = try? Data(contentsOf: font.url)
+        else { return "" }
+        let format = font.url.pathExtension.lowercased() == "otf" ? "opentype" : "truetype"
+        let escapedFamily = font.familyName.replacingOccurrences(of: "'", with: "\\'")
+        return """
+        @font-face {
+            font-family: '\(escapedFamily)';
+            src: url(data:font/\(font.url.pathExtension.lowercased());base64,\(data.base64EncodedString())) format('\(format)');
+            font-weight: normal;
+            font-style: normal;
+        }
+        """
+    }
+
+    private func plainTextHTML(_ text: String) -> String {
+        text.components(separatedBy: .newlines).map { line in
+            let escaped = line
+                .replacingOccurrences(of: "&", with: "&amp;")
+                .replacingOccurrences(of: "<", with: "&lt;")
+                .replacingOccurrences(of: ">", with: "&gt;")
+            return escaped.isEmpty ? "<p>&nbsp;</p>" : "<p>\(escaped)</p>"
+        }.joined()
     }
 
     private func showLoadingView() {
@@ -359,11 +453,49 @@ final class EBookReaderViewController: UIViewController {
         updateBookmarkButton()
     }
 
+    private func configureWebButtons() {
+        let preferencesButton = UIBarButtonItem(
+            image: UIImage(systemName: "textformat.size"),
+            style: .plain,
+            target: self,
+            action: #selector(presentPreferences)
+        )
+        navigationItem.rightBarButtonItems = []
+        toolbarItems = [
+            UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
+            preferencesButton,
+            UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
+        ]
+        navigationController?.setToolbarHidden(false, animated: false)
+    }
+
     private func setReaderBars(hidden: Bool, animated: Bool) {
         readerBarsHidden = hidden
         navigationController?.setNavigationBarHidden(hidden, animated: animated)
-        navigationController?.setToolbarHidden(hidden || epubNavigator == nil, animated: animated)
+        let hasReaderToolbar = epubNavigator != nil || webView != nil
+        navigationController?.setToolbarHidden(hidden || !hasReaderToolbar, animated: animated)
         setNeedsStatusBarAppearanceUpdate()
+    }
+
+    @objc private func handleWebTap(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .ended, let webView else { return }
+        let point = gesture.location(in: webView)
+        let relativeX = point.x / max(webView.bounds.width, 1)
+        if (0.28 ... 0.72).contains(relativeX) {
+            setReaderBars(hidden: !readerBarsHidden, animated: true)
+            return
+        }
+        guard webIsPaginated else { return }
+        turnWebPage(forward: relativeX > 0.5)
+    }
+
+    private func turnWebPage(forward: Bool) {
+        guard let webView else { return }
+        let pageWidth = max(webView.bounds.width, 1)
+        let maximumOffset = max(webView.scrollView.contentSize.width - pageWidth, 0)
+        let delta = forward ? pageWidth : -pageWidth
+        let target = min(max(webView.scrollView.contentOffset.x + delta, 0), maximumOffset)
+        webView.scrollView.setContentOffset(CGPoint(x: target, y: 0), animated: true)
     }
 
     private func turnPage(forward: Bool) {
@@ -448,9 +580,16 @@ final class EBookReaderViewController: UIViewController {
     @objc private func presentPreferences() {
         guard let book = store.book(withID: bookID) else { return }
         let effectivePreferences = store.effectivePreferences(for: book)
-        let view = EBookPreferencesView(preferences: effectivePreferences) { [weak self] preferences in
+        let view = EBookPreferencesView(
+            format: book.format,
+            preferences: effectivePreferences
+        ) { [weak self] preferences in
             guard let self else { return }
             store.savePreferences(preferences, for: bookID)
+            apply(preferences)
+        } onApplyGlobally: { [weak self] preferences in
+            guard let self else { return }
+            store.applyGlobalPreferences(preferences)
             apply(preferences)
         } onReset: { [weak self] in
             guard let self else { return }
@@ -770,8 +909,10 @@ private struct EBookPreferencesView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var fontStore = EBookFontStore.shared
 
+    let format: EBookFormat
     @State var preferences: EBookPreferences
     let onSave: (EBookPreferences) -> Void
+    let onApplyGlobally: (EBookPreferences) -> Void
     let onReset: () -> Void
 
     @State private var isImportingFont = false
@@ -818,14 +959,22 @@ private struct EBookPreferencesView: View {
                         Text(NSLocalizedString("EBOOK_PAGED_READING", comment: "Paginated e-book reading")).tag(false)
                         Text(NSLocalizedString("EBOOK_SCROLL_READING", comment: "Scrolling e-book reading")).tag(true)
                     }
-                    Toggle(NSLocalizedString("EBOOK_USE_PUBLISHER_STYLES", comment: "Use publisher styles setting"), isOn: $preferences.usesPublisherStyles)
+                    if format == .epub || format == .html {
+                        Toggle(NSLocalizedString("EBOOK_USE_PUBLISHER_STYLES", comment: "Use publisher styles setting"), isOn: $preferences.usesPublisherStyles)
+                    }
                 }
 
                 Section {
+                    Button(NSLocalizedString("EBOOK_APPLY_TO_ALL_BOOKS", comment: "Apply e-book settings to all books")) {
+                        onApplyGlobally(preferences)
+                        dismiss()
+                    }
                     Button(NSLocalizedString("EBOOK_RESET_TO_GLOBAL", comment: "Reset e-book settings to global defaults"), role: .destructive) {
                         onReset()
                         dismiss()
                     }
+                } footer: {
+                    Text(NSLocalizedString("EBOOK_APPLY_TO_ALL_BOOKS_INFO", comment: "Apply e-book settings to all books explanation"))
                 }
 
                 if let fontMessage {
@@ -858,8 +1007,16 @@ private struct EBookPreferencesView: View {
                 isImportingFont = false
                 guard !urls.isEmpty else { return }
                 do {
-                    try fontStore.importFonts(urls)
-                    fontMessage = NSLocalizedString("EBOOK_FONT_IMPORTED_REOPEN", comment: "Font import success message")
+                    let importedFonts = try fontStore.importFonts(urls)
+                    if let font = importedFonts.first {
+                        preferences.fontFamily = font.familyName
+                        onApplyGlobally(preferences)
+                        fontMessage = format == .epub
+                            ? NSLocalizedString("EBOOK_FONT_IMPORTED_GLOBAL_REOPEN", comment: "Global font import success requiring EPUB reopen")
+                            : NSLocalizedString("EBOOK_FONT_IMPORTED_GLOBAL", comment: "Global font import success")
+                    } else {
+                        fontMessage = NSLocalizedString("EBOOK_FONT_IMPORTED_GLOBAL", comment: "Global font import success")
+                    }
                 } catch {
                     fontMessage = error.localizedDescription
                 }
@@ -888,5 +1045,17 @@ private struct EBookPreferencesView: View {
 
     private static var fontContentTypes: [UTType] {
         ["ttf", "otf"].compactMap { UTType(filenameExtension: $0) }
+    }
+}
+
+
+extension EBookReaderViewController: WKNavigationDelegate {}
+
+extension EBookReaderViewController: UIGestureRecognizerDelegate {
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        true
     }
 }

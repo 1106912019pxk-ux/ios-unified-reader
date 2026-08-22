@@ -67,17 +67,22 @@ final class EBookLibraryStore: ObservableObject {
                 }
             }
 
+            if format == .epub {
+                try EBookReadiumService.validateEPUBArchive(at: sourceURL)
+            }
+
             let id = UUID()
             let ext = sourceURL.pathExtension.lowercased()
             let destinationURL = booksDirectory.appendingPathComponent(
                 ext.isEmpty ? id.uuidString : "\(id.uuidString).\(ext)",
                 isDirectory: false
             )
-            try fileManager.copyItem(at: sourceURL, to: destinationURL)
+            try coordinatedCopy(from: sourceURL, to: destinationURL)
 
             do {
                 let metadata: EBookPublicationMetadata?
                 if format == .epub {
+                    try EBookReadiumService.validateEPUBArchive(at: destinationURL)
                     metadata = try await EBookReadiumService.shared.inspectEPUB(at: destinationURL)
                 } else {
                     metadata = nil
@@ -205,6 +210,21 @@ final class EBookLibraryStore: ObservableObject {
         }
     }
 
+    func applyGlobalPreferences(_ preferences: EBookPreferences) {
+        EBookPreferences.saveGlobalDefaults(preferences)
+        for index in books.indices {
+            books[index].preferences = preferences
+            books[index].usesGlobalPreferences = true
+        }
+        sortBooks()
+        do {
+            try save()
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     func addBookmark(title: String, locatorJSON: String, to id: UUID) {
         mutateBook(id) { book in
             guard !book.bookmarks.contains(where: { $0.locatorJSON == locatorJSON }) else { return }
@@ -220,6 +240,54 @@ final class EBookLibraryStore: ObservableObject {
 
     func book(withID id: UUID) -> EBook? {
         books.first { $0.id == id }
+    }
+
+    private func coordinatedCopy(from sourceURL: URL, to destinationURL: URL) throws {
+        var coordinationError: NSError?
+        var copyError: Error?
+        var coordinatedSourceURL: URL?
+
+        NSFileCoordinator().coordinate(
+            readingItemAt: sourceURL,
+            options: .withoutChanges,
+            error: &coordinationError
+        ) { readableURL in
+            coordinatedSourceURL = readableURL
+            do {
+                try fileManager.copyItem(at: readableURL, to: destinationURL)
+            } catch {
+                copyError = error
+            }
+        }
+
+        if let coordinationError {
+            try? fileManager.removeItem(at: destinationURL)
+            throw coordinationError
+        }
+        if let copyError {
+            try? fileManager.removeItem(at: destinationURL)
+            throw copyError
+        }
+        guard let coordinatedSourceURL else {
+            try? fileManager.removeItem(at: destinationURL)
+            throw EBookLibraryError.copyFailed
+        }
+
+        let sourceSize = try fileSize(at: coordinatedSourceURL)
+        let destinationSize = try fileSize(at: destinationURL)
+        guard sourceSize > 0 else {
+            try? fileManager.removeItem(at: destinationURL)
+            throw EBookLibraryError.emptyFile
+        }
+        guard sourceSize == destinationSize else {
+            try? fileManager.removeItem(at: destinationURL)
+            throw EBookLibraryError.incompleteCopy(expected: sourceSize, actual: destinationSize)
+        }
+    }
+
+    private func fileSize(at url: URL) throws -> Int64 {
+        let values = try url.resourceValues(forKeys: [.fileSizeKey])
+        return Int64(values.fileSize ?? 0)
     }
 
     private func prepareDirectories() throws {
@@ -320,6 +388,9 @@ final class EBookLibraryStore: ObservableObject {
 
 enum EBookLibraryError: LocalizedError {
     case unsupportedFormat(String)
+    case copyFailed
+    case emptyFile
+    case incompleteCopy(expected: Int64, actual: Int64)
 
     var errorDescription: String? {
         switch self {
@@ -330,6 +401,16 @@ enum EBookLibraryError: LocalizedError {
                     format: NSLocalizedString("EBOOK_ERROR_UNSUPPORTED_FORMAT", comment: "Unsupported e-book format error"),
                     extensionName
                 )
+        case .copyFailed:
+            return NSLocalizedString("EBOOK_ERROR_COPY_FAILED", comment: "E-book coordinated copy failure")
+        case .emptyFile:
+            return NSLocalizedString("EBOOK_ERROR_EMPTY_FILE", comment: "Empty e-book file error")
+        case let .incompleteCopy(expected, actual):
+            return String(
+                format: NSLocalizedString("EBOOK_ERROR_INCOMPLETE_COPY", comment: "Incomplete e-book copy error"),
+                expected,
+                actual
+            )
         }
     }
 }

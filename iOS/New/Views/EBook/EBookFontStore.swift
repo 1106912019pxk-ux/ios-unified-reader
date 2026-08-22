@@ -34,7 +34,9 @@ final class EBookFontStore: ObservableObject {
         refresh()
     }
 
-    func importFonts(_ urls: [URL]) throws {
+    @discardableResult
+    func importFonts(_ urls: [URL]) throws -> [Font] {
+        var importedFileNames: [String] = []
         for sourceURL in urls {
             let ext = sourceURL.pathExtension.lowercased()
             guard ext == "ttf" || ext == "otf" else {
@@ -46,10 +48,18 @@ final class EBookFontStore: ObservableObject {
                     sourceURL.stopAccessingSecurityScopedResource()
                 }
             }
-            let destinationURL = uniqueDestination(for: sourceURL.lastPathComponent)
+            let destinationURL = safeDestination(forExtension: ext)
             try fileManager.copyItem(at: sourceURL, to: destinationURL)
+            importedFileNames.append(destinationURL.lastPathComponent)
         }
         refresh()
+        let importedNames = Set(importedFileNames)
+        return fonts.filter { importedNames.contains($0.fileName) }
+    }
+
+    func font(named familyName: String?) -> Font? {
+        guard let familyName else { return nil }
+        return fonts.first { $0.familyName == familyName }
     }
 
     func refresh() {
@@ -59,7 +69,8 @@ final class EBookFontStore: ObservableObject {
             options: [.skipsHiddenFiles]
         )) ?? []
 
-        fonts = urls.compactMap { url in
+        let normalizedURLs = urls.map(normalizeFontFileName)
+        fonts = normalizedURLs.compactMap { url in
             guard ["ttf", "otf"].contains(url.pathExtension.lowercased()) else { return nil }
             CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
             let descriptors = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor]
@@ -71,26 +82,36 @@ final class EBookFontStore: ObservableObject {
         .sorted { $0.familyName.localizedCaseInsensitiveCompare($1.familyName) == .orderedAscending }
     }
 
-    func readiumDeclarations() -> [AnyHTMLFontFamilyDeclaration] {
-        fonts.compactMap { font in
-            guard let url = FileURL(url: font.url) else { return nil }
-            return CSSFontFamilyDeclaration(
+    func readiumDeclarations(for familyName: String?) -> [AnyHTMLFontFamilyDeclaration] {
+        guard let font = font(named: familyName),
+              let url = FileURL(url: font.url)
+        else { return [] }
+        return [
+            CSSFontFamilyDeclaration(
                 fontFamily: FontFamily(rawValue: font.familyName),
                 fontFaces: [CSSFontFace(file: url)]
-            ).eraseToAnyHTMLFontFamilyDeclaration()
+            ).eraseToAnyHTMLFontFamilyDeclaration(),
+        ]
+    }
+
+    private func normalizeFontFileName(_ url: URL) -> URL {
+        let stem = url.deletingPathExtension().lastPathComponent
+        guard UUID(uuidString: stem) == nil else { return url }
+
+        let destinationURL = safeDestination(forExtension: url.pathExtension.lowercased())
+        do {
+            try fileManager.moveItem(at: url, to: destinationURL)
+            return destinationURL
+        } catch {
+            return url
         }
     }
 
-    private func uniqueDestination(for originalName: String) -> URL {
-        let originalURL = URL(fileURLWithPath: originalName)
-        let stem = originalURL.deletingPathExtension().lastPathComponent
-        let ext = originalURL.pathExtension
-        var candidate = fontsDirectory.appendingPathComponent(originalName)
-        var suffix = 2
-        while fileManager.fileExists(atPath: candidate.path) {
-            candidate = fontsDirectory.appendingPathComponent("\(stem) \(suffix).\(ext)")
-            suffix += 1
-        }
+    private func safeDestination(forExtension ext: String) -> URL {
+        var candidate: URL
+        repeat {
+            candidate = fontsDirectory.appendingPathComponent("\(UUID().uuidString).\(ext)")
+        } while fileManager.fileExists(atPath: candidate.path)
         return candidate
     }
 }

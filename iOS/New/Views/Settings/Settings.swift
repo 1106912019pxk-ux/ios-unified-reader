@@ -689,6 +689,41 @@ extension Settings {
                             value: .toggle(.init())
                         ),
                         .init(
+                            key: EBookPreferences.defaultFontSizeKey,
+                            title: NSLocalizedString("EBOOK_FONT_SIZE", comment: "Default e-book font size"),
+                            value: .stepper(.init(minimumValue: 0.7, maximumValue: 2, stepValue: 0.05))
+                        ),
+                        .init(
+                            key: EBookPreferences.defaultLineHeightKey,
+                            title: NSLocalizedString("EBOOK_LINE_HEIGHT", comment: "Default e-book line height"),
+                            value: .stepper(.init(minimumValue: 1, maximumValue: 2.4, stepValue: 0.05))
+                        ),
+                        .init(
+                            key: EBookPreferences.defaultPageMarginsKey,
+                            title: NSLocalizedString("EBOOK_HORIZONTAL_MARGINS", comment: "Default e-book horizontal margins"),
+                            value: .stepper(.init(minimumValue: 0, maximumValue: 2, stepValue: 0.1))
+                        ),
+                        .init(
+                            key: EBookPreferences.defaultTopMarginKey,
+                            title: NSLocalizedString("EBOOK_TOP_MARGIN", comment: "Default e-book top margin"),
+                            value: .stepper(.init(minimumValue: 0, maximumValue: 100, stepValue: 2))
+                        ),
+                        .init(
+                            key: EBookPreferences.defaultBottomMarginKey,
+                            title: NSLocalizedString("EBOOK_BOTTOM_MARGIN", comment: "Default e-book bottom margin"),
+                            value: .stepper(.init(minimumValue: 0, maximumValue: 100, stepValue: 2))
+                        ),
+                        .init(
+                            key: EBookPreferences.defaultParagraphIndentKey,
+                            title: NSLocalizedString("EBOOK_PARAGRAPH_INDENT", comment: "Default e-book first-line indent"),
+                            value: .stepper(.init(minimumValue: 0, maximumValue: 4, stepValue: 0.1))
+                        ),
+                        .init(
+                            key: EBookPreferences.defaultParagraphSpacingKey,
+                            title: NSLocalizedString("EBOOK_PARAGRAPH_SPACING", comment: "Default e-book paragraph spacing"),
+                            value: .stepper(.init(minimumValue: 0, maximumValue: 2, stepValue: 0.1))
+                        ),
+                        .init(
                             key: EBookPreferences.keepScreenAwakeKey,
                             title: NSLocalizedString("EBOOK_KEEP_SCREEN_AWAKE", comment: "Keep screen awake while reading e-books"),
                             value: .toggle(.init())

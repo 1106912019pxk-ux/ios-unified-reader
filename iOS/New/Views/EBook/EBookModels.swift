@@ -55,6 +55,14 @@ struct EBookPreferences: Codable, Hashable, Sendable {
     static let defaultThemeKey = "EBook.defaultTheme"
     static let defaultPublisherStylesKey = "EBook.defaultPublisherStyles"
     static let keepScreenAwakeKey = "EBook.keepScreenAwake"
+    static let defaultFontFamilyKey = "EBook.defaultFontFamily"
+    static let defaultFontSizeKey = "EBook.defaultFontSize"
+    static let defaultLineHeightKey = "EBook.defaultLineHeight"
+    static let defaultPageMarginsKey = "EBook.defaultPageMargins"
+    static let defaultTopMarginKey = "EBook.defaultTopMargin"
+    static let defaultBottomMarginKey = "EBook.defaultBottomMargin"
+    static let defaultParagraphIndentKey = "EBook.defaultParagraphIndent"
+    static let defaultParagraphSpacingKey = "EBook.defaultParagraphSpacing"
 
     var theme: Theme
     var fontFamily: String?
@@ -100,17 +108,50 @@ struct EBookPreferences: Codable, Hashable, Sendable {
             defaultThemeKey: Theme.system.rawValue,
             defaultPublisherStylesKey: true,
             keepScreenAwakeKey: false,
+            defaultFontFamilyKey: "",
+            defaultFontSizeKey: 1.0,
+            defaultLineHeightKey: 1.5,
+            defaultPageMarginsKey: 1.0,
+            defaultTopMarginKey: 34.0,
+            defaultBottomMarginKey: 34.0,
+            defaultParagraphIndentKey: 0.0,
+            defaultParagraphSpacingKey: 0.0,
         ])
     }
 
     static var globalDefaults: Self {
         registerGlobalDefaults()
         let defaults = UserDefaults.standard
+        let family = defaults.string(forKey: defaultFontFamilyKey)
         return Self(
             theme: Theme(rawValue: defaults.string(forKey: defaultThemeKey) ?? "") ?? .system,
+            fontFamily: family?.isEmpty == false ? family : nil,
+            fontSize: defaults.double(forKey: defaultFontSizeKey),
+            lineHeight: defaults.double(forKey: defaultLineHeightKey),
+            pageMargins: defaults.double(forKey: defaultPageMarginsKey),
+            topMargin: defaults.double(forKey: defaultTopMarginKey),
+            bottomMargin: defaults.double(forKey: defaultBottomMarginKey),
+            paragraphIndent: defaults.double(forKey: defaultParagraphIndentKey),
+            paragraphSpacing: defaults.double(forKey: defaultParagraphSpacingKey),
             isScrollEnabled: defaults.string(forKey: defaultReadingModeKey) == "scroll",
             usesPublisherStyles: defaults.bool(forKey: defaultPublisherStylesKey)
         )
+    }
+
+    static func saveGlobalDefaults(_ preferences: Self) {
+        registerGlobalDefaults()
+        let defaults = UserDefaults.standard
+        defaults.set(preferences.theme.rawValue, forKey: defaultThemeKey)
+        defaults.set(preferences.fontFamily ?? "", forKey: defaultFontFamilyKey)
+        defaults.set(preferences.fontSize, forKey: defaultFontSizeKey)
+        defaults.set(preferences.lineHeight, forKey: defaultLineHeightKey)
+        defaults.set(preferences.pageMargins, forKey: defaultPageMarginsKey)
+        defaults.set(preferences.topMargin, forKey: defaultTopMarginKey)
+        defaults.set(preferences.bottomMargin, forKey: defaultBottomMarginKey)
+        defaults.set(preferences.paragraphIndent, forKey: defaultParagraphIndentKey)
+        defaults.set(preferences.paragraphSpacing, forKey: defaultParagraphSpacingKey)
+        defaults.set(preferences.isScrollEnabled ? "scroll" : "paged", forKey: defaultReadingModeKey)
+        defaults.set(preferences.usesPublisherStyles, forKey: defaultPublisherStylesKey)
     }
 
     static var keepsScreenAwake: Bool {

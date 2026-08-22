@@ -756,3 +756,14 @@
 "EBOOK_DEFAULT_READING_MODE" = "預設閱讀方式";
 "EBOOK_DEFAULT_THEME" = "預設主題";
 "EBOOK_KEEP_SCREEN_AWAKE" = "閱讀時保持螢幕恆亮";
+"EBOOK_ERROR_EPUB_IS_WEBPAGE" = "所選 .epub 實際上是網頁錯誤內容，並不是 EPUB 書籍。請重新下載真正的書籍檔案。";
+"EBOOK_ERROR_EPUB_INCOMPLETE" = "EPUB 壓縮檔不完整或已損壞，請重新下載。";
+"EBOOK_ERROR_COPY_FAILED" = "無法從「檔案」提供方複製書籍。";
+"EBOOK_ERROR_EMPTY_FILE" = "所選書籍檔案為空。";
+"EBOOK_ERROR_INCOMPLETE_COPY" = "匯入副本不完整（原檔案 %lld 位元組，實際複製 %lld 位元組）。";
+"EBOOK_APPLY_TO_ALL_BOOKS" = "套用到所有書籍";
+"EBOOK_APPLY_TO_ALL_BOOKS_INFO" = "將目前排版儲存為全域預設，並套用到所有已匯入書籍。";
+"EBOOK_FONT_IMPORTED_GLOBAL" = "字型已匯入，並設為所有書籍的預設字型。";
+"EBOOK_FONT_IMPORTED_GLOBAL_REOPEN" = "字型已匯入並套用到所有書籍；請重新開啟目前 EPUB 以載入新字型。";
+
+"EBOOK_ERROR_EPUB_EMPTY_READING_ORDER" = "這個 EPUB 不包含可讀取的章節。";

@@ -14,6 +14,7 @@ struct EBookPublicationMetadata: Sendable {
     var coverData: Data?
 }
 
+@MainActor
 final class EBookReadiumService {
     static let shared = EBookReadiumService()
 
@@ -32,6 +33,33 @@ final class EBookReadiumService {
             ),
             contentProtections: []
         )
+    }
+
+    static func validateEPUBArchive(at url: URL) throws {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+
+        let size = try handle.seekToEnd()
+        guard size >= 22 else {
+            throw EBookReaderError.incompleteEPUBArchive
+        }
+
+        try handle.seek(toOffset: 0)
+        let prefix = try handle.read(upToCount: 512) ?? Data()
+        if let text = String(data: prefix, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+           text.hasPrefix("<html") || text.hasPrefix("<!doctype html") {
+            throw EBookReaderError.webPageMasqueradingAsEPUB
+        }
+
+        let tailLength = Int(min(size, 65_557))
+        try handle.seek(toOffset: size - UInt64(tailLength))
+        let tail = try handle.readToEnd() ?? Data()
+        let endOfCentralDirectory = Data([0x50, 0x4B, 0x05, 0x06])
+        guard tail.range(of: endOfCentralDirectory, options: .backwards) != nil else {
+            throw EBookReaderError.incompleteEPUBArchive
+        }
     }
 
     func inspectEPUB(at url: URL) async throws -> EBookPublicationMetadata {
@@ -89,6 +117,9 @@ enum EBookReaderError: LocalizedError {
     case missingFile
     case restrictedPublication
     case unsupportedReader(EBookFormat)
+    case webPageMasqueradingAsEPUB
+    case incompleteEPUBArchive
+    case emptyReadingOrder
     case assetRetrievalFailed(String)
     case publicationOpenFailed(String)
 
@@ -105,6 +136,12 @@ enum EBookReaderError: LocalizedError {
                 format: NSLocalizedString("EBOOK_ERROR_READER_UNAVAILABLE", comment: "Unavailable e-book reader error"),
                 format.displayName
             )
+        case .webPageMasqueradingAsEPUB:
+            NSLocalizedString("EBOOK_ERROR_EPUB_IS_WEBPAGE", comment: "Web page downloaded with an EPUB extension")
+        case .incompleteEPUBArchive:
+            NSLocalizedString("EBOOK_ERROR_EPUB_INCOMPLETE", comment: "Incomplete EPUB ZIP archive")
+        case .emptyReadingOrder:
+            NSLocalizedString("EBOOK_ERROR_EPUB_EMPTY_READING_ORDER", comment: "EPUB has no readable spine items")
         case let .assetRetrievalFailed(detail):
             String(
                 format: NSLocalizedString("EBOOK_ERROR_EPUB_ARCHIVE", comment: "Unreadable EPUB archive error"),

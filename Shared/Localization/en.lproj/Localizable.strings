@@ -918,3 +918,14 @@
 "EBOOK_DEFAULT_READING_MODE" = "Default Reading Mode";
 "EBOOK_DEFAULT_THEME" = "Default Theme";
 "EBOOK_KEEP_SCREEN_AWAKE" = "Keep Screen Awake While Reading";
+"EBOOK_ERROR_EPUB_IS_WEBPAGE" = "The selected .epub is an HTML web page, not an EPUB book. Download the actual book file again.";
+"EBOOK_ERROR_EPUB_INCOMPLETE" = "The EPUB ZIP archive is incomplete or damaged. Download the book again.";
+"EBOOK_ERROR_COPY_FAILED" = "The book file could not be copied from the Files provider.";
+"EBOOK_ERROR_EMPTY_FILE" = "The selected book file is empty.";
+"EBOOK_ERROR_INCOMPLETE_COPY" = "The imported copy is incomplete (expected %lld bytes, copied %lld bytes).";
+"EBOOK_APPLY_TO_ALL_BOOKS" = "Apply to All Books";
+"EBOOK_APPLY_TO_ALL_BOOKS_INFO" = "Saves these values as the global defaults and applies them to every imported book.";
+"EBOOK_FONT_IMPORTED_GLOBAL" = "The font was imported and applied as the default for all books.";
+"EBOOK_FONT_IMPORTED_GLOBAL_REOPEN" = "The font was imported and applied to all books. Reopen the current EPUB to load the new font.";
+
+"EBOOK_ERROR_EPUB_EMPTY_READING_ORDER" = "This EPUB does not contain any readable chapters.";

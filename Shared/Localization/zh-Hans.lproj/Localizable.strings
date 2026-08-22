@@ -799,3 +799,14 @@
 "EBOOK_DEFAULT_READING_MODE" = "默认阅读方式";
 "EBOOK_DEFAULT_THEME" = "默认主题";
 "EBOOK_KEEP_SCREEN_AWAKE" = "阅读时保持屏幕常亮";
+"EBOOK_ERROR_EPUB_IS_WEBPAGE" = "所选 .epub 实际上是网页错误内容，并不是 EPUB 书籍。请重新下载真正的书籍文件。";
+"EBOOK_ERROR_EPUB_INCOMPLETE" = "EPUB 压缩包不完整或已损坏，请重新下载。";
+"EBOOK_ERROR_COPY_FAILED" = "无法从“文件”提供方复制书籍。";
+"EBOOK_ERROR_EMPTY_FILE" = "所选书籍文件为空。";
+"EBOOK_ERROR_INCOMPLETE_COPY" = "导入副本不完整（原文件 %lld 字节，实际复制 %lld 字节）。";
+"EBOOK_APPLY_TO_ALL_BOOKS" = "应用到所有书籍";
+"EBOOK_APPLY_TO_ALL_BOOKS_INFO" = "将当前排版保存为全局默认，并应用到所有已导入书籍。";
+"EBOOK_FONT_IMPORTED_GLOBAL" = "字体已导入，并设为所有书籍的默认字体。";
+"EBOOK_FONT_IMPORTED_GLOBAL_REOPEN" = "字体已导入并应用到所有书籍；请重新打开当前 EPUB 以载入新字体。";
+
+"EBOOK_ERROR_EPUB_EMPTY_READING_ORDER" = "这个 EPUB 不包含可读取的章节。";

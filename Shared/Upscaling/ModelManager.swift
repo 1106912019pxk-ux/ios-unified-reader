@@ -48,7 +48,7 @@ actor ModelManager {
             if fm.fileExists(atPath: fileURL.path) {
                 try fm.removeItem(at: fileURL)
             }
-            try fm.unzipItem(at: tempZipURL, to: fileURL)
+            try await fm.unzipItem(at: tempZipURL, to: fileURL)
             try fm.removeItem(at: tempZipURL)
         } else {
             // download as a single file (.mlmodel)

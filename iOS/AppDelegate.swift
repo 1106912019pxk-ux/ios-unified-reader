@@ -186,6 +186,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 "Reader.textBottomPadding": 32,
                 "Reader.textParagraphSpacing": 12,
                 "Reader.textFirstLineIndent": 0,
+                "Reader.textAutoScrollEnabled": false,
+                "Reader.textAutoScrollSpeed": 1.0,
 
                 "Tracking.updateAfterReading": true,
                 "Tracking.autoSyncFromTracker": false,

@@ -23,6 +23,9 @@ func textReaderLocalized(_ key: String, fallback: String) -> String {
         "TEXT_BACKGROUND_MIST_BLUE": "雾蓝色",
         "TEXT_BACKGROUND_SOFT_GRAY": "柔灰色",
         "TEXT_BACKGROUND_BLACK": "黑色",
+        "TEXT_AUTO_SCROLL": "自动阅读",
+        "TEXT_AUTO_SCROLL_SPEED": "自动阅读速度",
+        "TEXT_AUTO_SCROLL_PAUSED": "自动阅读已暂停",
         "IMPORTED_FONTS": "已导入字体",
         "IMPORT_TTF_OTF_FONT": "导入 TTF/OTF 字体"
     ]
@@ -39,6 +42,9 @@ func textReaderLocalized(_ key: String, fallback: String) -> String {
         "TEXT_BACKGROUND_MIST_BLUE": "霧藍色",
         "TEXT_BACKGROUND_SOFT_GRAY": "柔灰色",
         "TEXT_BACKGROUND_BLACK": "黑色",
+        "TEXT_AUTO_SCROLL": "自動閱讀",
+        "TEXT_AUTO_SCROLL_SPEED": "自動閱讀速度",
+        "TEXT_AUTO_SCROLL_PAUSED": "自動閱讀已暫停",
         "IMPORTED_FONTS": "已匯入字體",
         "IMPORT_TTF_OTF_FONT": "匯入 TTF/OTF 字體"
     ]

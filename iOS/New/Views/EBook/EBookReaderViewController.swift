@@ -620,7 +620,7 @@ private final class EBookSearchModel: ObservableObject {
 }
 
 private struct EBookContentsView: View {
-    enum Section: CaseIterable {
+    enum Pane: CaseIterable {
         case contents
         case search
         case bookmarks
@@ -644,7 +644,7 @@ private struct EBookContentsView: View {
     let onSearchResult: (Locator) -> Void
     let onBookmark: (EBookBookmark) -> Void
 
-    @State private var section: Section = .contents
+    @State private var section: Pane = .contents
     @StateObject private var searchModel = EBookSearchModel()
 
     var body: some View {

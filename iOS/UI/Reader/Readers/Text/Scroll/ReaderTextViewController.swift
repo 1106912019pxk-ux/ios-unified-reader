@@ -548,6 +548,7 @@ extension ReaderTextViewController {
         let elapsed = min(0.1, displayLink.timestamp - autoScrollLastTimestamp)
         autoScrollLastTimestamp = displayLink.timestamp
 
+        guard !sections.isEmpty, scrollView.contentSize.height > 0 else { return }
         checkInfiniteLoad()
         let maximumOffset = max(
             -scrollView.adjustedContentInset.top,

@@ -262,6 +262,58 @@ struct TextReaderAutoScrollSettingView: View {
     }
 }
 
+struct WebtoonAutoScrollSettingView: View {
+    @AppStorage("Reader.webtoonAutoScrollEnabled") private var isEnabled = false
+    @AppStorage("Reader.webtoonAutoScrollSpeed") private var speed = 1.0
+
+    private let minimumSpeed = 0.5
+    private let maximumSpeed = 4.0
+    private let speedStep = 0.25
+
+    var body: some View {
+        Toggle(
+            textReaderLocalized("WEBTOON_AUTO_SCROLL", fallback: "Webtoon Auto Reading"),
+            isOn: $isEnabled
+        )
+        .onChange(of: isEnabled) { enabled in
+            NotificationCenter.default.post(name: .init("Reader.webtoonAutoScrollEnabled"), object: enabled)
+        }
+
+        if isEnabled {
+            HStack {
+                Text(textReaderLocalized("WEBTOON_AUTO_SCROLL_SPEED", fallback: "Auto Reading Speed"))
+                Spacer()
+                Button {
+                    changeSpeed(by: -speedStep)
+                } label: {
+                    Image(systemName: "minus")
+                        .frame(width: 32, height: 32)
+                }
+                .buttonStyle(.borderless)
+                .disabled(speed <= minimumSpeed)
+
+                Text("\(speed.formatted(.number.precision(.fractionLength(2))))×")
+                    .monospacedDigit()
+                    .frame(minWidth: 48)
+
+                Button {
+                    changeSpeed(by: speedStep)
+                } label: {
+                    Image(systemName: "plus")
+                        .frame(width: 32, height: 32)
+                }
+                .buttonStyle(.borderless)
+                .disabled(speed >= maximumSpeed)
+            }
+        }
+    }
+
+    private func changeSpeed(by amount: Double) {
+        speed = min(maximumSpeed, max(minimumSpeed, (speed + amount) * 4).rounded() / 4)
+        NotificationCenter.default.post(name: .init("Reader.webtoonAutoScrollSpeed"), object: speed)
+    }
+}
+
 struct ReaderSettingsView: View {
     let mangaId: MangaIdentifier
     let reader: ReaderViewController.Reader
@@ -673,8 +725,9 @@ struct ReaderSettingsView: View {
                         }
                     }
 
-                    if readingMode == .webtoon || readingMode == .continuous || readingMode == nil {
+                    if reader == .scroll && (readingMode == .webtoon || readingMode == .continuous || readingMode == nil) {
                         Section {
+                            WebtoonAutoScrollSettingView()
                             SettingView(
                                 setting: .init(
                                     key: "Reader.verticalInfiniteScroll",

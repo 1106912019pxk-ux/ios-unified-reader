@@ -10,6 +10,18 @@ import AsyncDisplayKit
 import Nuke
 import UIKit
 
+private final class WebtoonAutoScrollDisplayLinkProxy {
+    weak var owner: ReaderWebtoonViewController?
+
+    init(owner: ReaderWebtoonViewController) {
+        self.owner = owner
+    }
+
+    @objc func step(_ displayLink: CADisplayLink) {
+        owner?.handleAutoScrollFrame(displayLink)
+    }
+}
+
 class ReaderWebtoonViewController: ZoomableCollectionViewController {
 
     let viewModel: ReaderWebtoonViewModel
@@ -50,9 +62,83 @@ class ReaderWebtoonViewController: ZoomableCollectionViewController {
     // Stores the last calculated page number
     private var previousPage = 0
 
+    // MARK: - Auto Reading
+
+    private let autoScrollBasePointsPerSecond: CGFloat = 28
+    private var autoScrollDisplayLink: CADisplayLink?
+    private var autoScrollDisplayLinkProxy: WebtoonAutoScrollDisplayLinkProxy?
+    private var autoScrollLastTimestamp: CFTimeInterval = 0
+    private var isAutoScrollPaused = false
+    private var isAutoScrollAdvancing = false
+
+    private lazy var autoScrollControlView: UIVisualEffectView = {
+        let control = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
+        control.layer.cornerRadius = 22
+        control.clipsToBounds = true
+        control.isHidden = true
+
+        let stack = UIStackView(arrangedSubviews: [
+            autoScrollPlayPauseButton,
+            makeAutoScrollButton(systemName: "minus", action: #selector(decreaseAutoScrollSpeed)),
+            autoScrollSpeedLabel,
+            makeAutoScrollButton(systemName: "plus", action: #selector(increaseAutoScrollSpeed)),
+            makeAutoScrollButton(systemName: "xmark", action: #selector(stopAutoScroll))
+        ])
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 4
+        control.contentView.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: control.contentView.leadingAnchor, constant: 8),
+            stack.trailingAnchor.constraint(equalTo: control.contentView.trailingAnchor, constant: -8),
+            stack.topAnchor.constraint(equalTo: control.contentView.topAnchor, constant: 4),
+            stack.bottomAnchor.constraint(equalTo: control.contentView.bottomAnchor, constant: -4)
+        ])
+        return control
+    }()
+
+    private lazy var autoScrollPlayPauseButton: UIButton = {
+        makeAutoScrollButton(systemName: "pause.fill", action: #selector(toggleAutoScrollPause))
+    }()
+
+    private lazy var autoScrollSpeedLabel: UILabel = {
+        let label = UILabel()
+        label.font = .monospacedDigitSystemFont(ofSize: 14, weight: .semibold)
+        label.textAlignment = .center
+        label.widthAnchor.constraint(equalToConstant: 54).isActive = true
+        return label
+    }()
+
     init(source: AidokuRunner.Source?, manga: AidokuRunner.Manga) {
         self.viewModel = ReaderWebtoonViewModel(source: source, manga: manga)
         super.init(layout: VerticalContentOffsetPreservingLayout())
+    }
+
+    deinit {
+        autoScrollDisplayLink?.invalidate()
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.addSubview(autoScrollControlView)
+        autoScrollControlView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            autoScrollControlView.centerXAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerXAnchor),
+            autoScrollControlView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
+            autoScrollControlView.heightAnchor.constraint(equalToConstant: 44)
+        ])
+        applyAutoScrollState()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        applyAutoScrollState()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        invalidateAutoScrollDisplayLink()
     }
 
     override func configure() {
@@ -101,6 +187,9 @@ class ReaderWebtoonViewController: ZoomableCollectionViewController {
 
         zoomView.onZoomScaleChanged = { [weak self] scale in
             self?.setLiveTextButtonHidden(scale != 1)
+            if scale != 1 {
+                self?.setAutoScrollPaused(true)
+            }
         }
     }
 
@@ -124,6 +213,14 @@ class ReaderWebtoonViewController: ZoomableCollectionViewController {
         }
         addObserver(forName: .readerHidingBars) { [weak self] _ in
             self?.setLiveTextButtonHidden(true)
+        }
+        addObserver(forName: "Reader.webtoonAutoScrollEnabled") { [weak self] _ in
+            self?.isAutoScrollPaused = false
+            self?.applyAutoScrollState()
+        }
+        addObserver(forName: "Reader.webtoonAutoScrollSpeed") { [weak self] _ in
+            self?.autoScrollLastTimestamp = 0
+            self?.updateAutoScrollControls()
         }
 
         addObserver(forName: UIApplication.didReceiveMemoryWarningNotification.rawValue) { [weak self] _ in
@@ -193,6 +290,7 @@ class ReaderWebtoonViewController: ZoomableCollectionViewController {
 extension ReaderWebtoonViewController {
     override func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
         super.scrollViewWillBeginDragging(scrollView)
+        setAutoScrollPaused(true)
         setLiveTextButtonHidden(true)
     }
 
@@ -200,7 +298,9 @@ extension ReaderWebtoonViewController {
     override func scrollViewDidScroll(_ scrollView: UIScrollView) {
         super.scrollViewDidScroll(scrollView)
 
-        isScrolling = true
+        if !isAutoScrollAdvancing {
+            isScrolling = true
+        }
 
         // ignore if page slider is being used
         guard !isSliding && !isZooming else { return }
@@ -252,6 +352,163 @@ extension ReaderWebtoonViewController {
         coordinator.animate { _ in
             self.zoomView.adjustContentSize()
         }
+    }
+}
+
+// MARK: - Auto Reading
+extension ReaderWebtoonViewController {
+    private var autoScrollEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "Reader.webtoonAutoScrollEnabled")
+    }
+
+    private var autoScrollSpeed: Double {
+        let value = UserDefaults.standard.object(forKey: "Reader.webtoonAutoScrollSpeed") as? Double ?? 1
+        return min(4, max(0.5, value))
+    }
+
+    private func makeAutoScrollButton(systemName: String, action: Selector) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setImage(UIImage(systemName: systemName), for: .normal)
+        button.tintColor = .label
+        button.addTarget(self, action: action, for: .touchUpInside)
+        button.widthAnchor.constraint(equalToConstant: 36).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        return button
+    }
+
+    private func applyAutoScrollState() {
+        autoScrollControlView.isHidden = !autoScrollEnabled
+        updateAutoScrollControls()
+        if autoScrollEnabled && !isAutoScrollPaused {
+            startAutoScrollDisplayLink()
+        } else {
+            invalidateAutoScrollDisplayLink()
+        }
+    }
+
+    private func startAutoScrollDisplayLink() {
+        guard autoScrollDisplayLink == nil else { return }
+        let proxy = WebtoonAutoScrollDisplayLinkProxy(owner: self)
+        let displayLink = CADisplayLink(target: proxy, selector: #selector(WebtoonAutoScrollDisplayLinkProxy.step(_:)))
+        displayLink.add(to: .main, forMode: .common)
+        autoScrollDisplayLinkProxy = proxy
+        autoScrollDisplayLink = displayLink
+        autoScrollLastTimestamp = 0
+    }
+
+    private func invalidateAutoScrollDisplayLink() {
+        autoScrollDisplayLink?.invalidate()
+        autoScrollDisplayLink = nil
+        autoScrollDisplayLinkProxy = nil
+        autoScrollLastTimestamp = 0
+    }
+
+    fileprivate func handleAutoScrollFrame(_ displayLink: CADisplayLink) {
+        guard autoScrollEnabled, !isAutoScrollPaused else {
+            invalidateAutoScrollDisplayLink()
+            return
+        }
+        guard
+            !scrollView.isDragging,
+            !scrollView.isDecelerating,
+            !isSliding,
+            !isZooming,
+            scrollView.zoomScale == 1
+        else {
+            autoScrollLastTimestamp = displayLink.timestamp
+            return
+        }
+
+        guard autoScrollLastTimestamp > 0 else {
+            autoScrollLastTimestamp = displayLink.timestamp
+            return
+        }
+        let elapsed = min(0.1, displayLink.timestamp - autoScrollLastTimestamp)
+        autoScrollLastTimestamp = displayLink.timestamp
+
+        guard !pages.isEmpty, scrollView.contentSize.height > 0 else { return }
+        let maximumOffset = max(0, scrollView.contentSize.height - scrollView.bounds.height)
+        let distance = autoScrollBasePointsPerSecond * CGFloat(autoScrollSpeed) * CGFloat(elapsed)
+        let target = min(maximumOffset, scrollView.contentOffset.y + distance)
+        isScrolling = false
+        isAutoScrollAdvancing = true
+        scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: target), animated: false)
+        isAutoScrollAdvancing = false
+
+        if infinite {
+            checkAutoScrollNextChapter()
+        }
+
+        let canContinue = infinite && delegate?.getNextChapter() != nil
+        if target >= maximumOffset - 0.5, !loadingNext, !canContinue {
+            setAutoScrollPaused(true)
+        }
+    }
+
+    private func checkAutoScrollNextChapter() {
+        guard !loadingNext, !pages.isEmpty else { return }
+        let bottomPath = getCurrentPagePath(pos: .bottom)
+        let isAtBottom = bottomPath == nil
+            || (bottomPath?.section == pages.count - 1
+                && bottomPath?.item == pages[pages.count - 1].count - 1)
+        guard isAtBottom else { return }
+
+        let previousSectionCount = pages.count
+        loadingNext = true
+        delegate?.setCompleted()
+        Task {
+            await appendNextChapter()
+            loadingNext = false
+            if pages.count == previousSectionCount {
+                setAutoScrollPaused(true)
+            }
+        }
+    }
+
+    private func setAutoScrollPaused(_ paused: Bool) {
+        guard autoScrollEnabled else { return }
+        isAutoScrollPaused = paused
+        if paused {
+            invalidateAutoScrollDisplayLink()
+        } else {
+            startAutoScrollDisplayLink()
+        }
+        updateAutoScrollControls()
+    }
+
+    private func updateAutoScrollControls() {
+        let iconName = isAutoScrollPaused ? "play.fill" : "pause.fill"
+        autoScrollPlayPauseButton.setImage(UIImage(systemName: iconName), for: .normal)
+        autoScrollPlayPauseButton.accessibilityLabel = isAutoScrollPaused
+            ? NSLocalizedString("PLAY")
+            : NSLocalizedString("PAUSE")
+        autoScrollSpeedLabel.text = String(format: "%.2f×", autoScrollSpeed)
+        autoScrollControlView.accessibilityLabel = isAutoScrollPaused
+            ? textReaderLocalized("WEBTOON_AUTO_SCROLL_PAUSED", fallback: "Webtoon Auto Reading Paused")
+            : textReaderLocalized("WEBTOON_AUTO_SCROLL", fallback: "Webtoon Auto Reading")
+    }
+
+    @objc private func toggleAutoScrollPause() {
+        setAutoScrollPaused(!isAutoScrollPaused)
+    }
+
+    @objc private func decreaseAutoScrollSpeed() {
+        changeAutoScrollSpeed(by: -0.25)
+    }
+
+    @objc private func increaseAutoScrollSpeed() {
+        changeAutoScrollSpeed(by: 0.25)
+    }
+
+    private func changeAutoScrollSpeed(by amount: Double) {
+        let newSpeed = min(4, max(0.5, (autoScrollSpeed + amount) * 4).rounded() / 4)
+        UserDefaults.standard.set(newSpeed, forKey: "Reader.webtoonAutoScrollSpeed")
+        NotificationCenter.default.post(name: .init("Reader.webtoonAutoScrollSpeed"), object: newSpeed)
+    }
+
+    @objc private func stopAutoScroll() {
+        UserDefaults.standard.set(false, forKey: "Reader.webtoonAutoScrollEnabled")
+        NotificationCenter.default.post(name: .init("Reader.webtoonAutoScrollEnabled"), object: false)
     }
 }
 
@@ -618,6 +875,7 @@ extension ReaderWebtoonViewController {
 // MARK: - Reader Delegate
 extension ReaderWebtoonViewController: ReaderReaderDelegate {
     func moveLeft() {
+        setAutoScrollPaused(true)
         let offset = CGPoint(
             x: collectionNode.contentOffset.x,
             y: max(
@@ -632,6 +890,7 @@ extension ReaderWebtoonViewController: ReaderReaderDelegate {
     }
 
     func moveRight() {
+        setAutoScrollPaused(true)
         let offset = CGPoint(
             x: collectionNode.contentOffset.x,
             y: min(
@@ -646,6 +905,7 @@ extension ReaderWebtoonViewController: ReaderReaderDelegate {
     }
 
     func sliderMoved(value: CGFloat) {
+        setAutoScrollPaused(true)
         isSliding = true
 
         // get slider area

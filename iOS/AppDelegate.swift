@@ -171,6 +171,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 "Reader.splitWideImages": false,
                 "Reader.reverseSplitOrder": false,
                 "Reader.verticalInfiniteScroll": true,
+                "Reader.webtoonAutoScrollEnabled": false,
+                "Reader.webtoonAutoScrollSpeed": 1.0,
                 "Reader.pillarbox": false,
                 "Reader.pillarboxAmount": 15,
                 "Reader.pillarboxOrientation": "both",

@@ -737,3 +737,22 @@
 "EBOOK_USE_PUBLISHER_STYLES" = "使用出版者樣式";
 "EBOOK_READING_SETTINGS" = "閱讀設定";
 "EBOOK_FONT_IMPORTED_REOPEN" = "字型已匯入。請重新開啟本書，以便 EPUB 內容使用新匯入的字型。";
+
+"EBOOK_ERROR_EPUB_ARCHIVE" = "無法讀取 EPUB 壓縮檔。詳細資訊：%@";
+"EBOOK_ERROR_EPUB_STRUCTURE" = "無法開啟 EPUB 內部結構。詳細資訊：%@";
+"EBOOK_IMPORTING" = "正在匯入並檢查書籍…";
+"EBOOK_SEARCH_PLACEHOLDER" = "搜尋本書內容";
+"EBOOK_NO_SEARCH_RESULTS" = "沒有找到相符內容";
+"EBOOK_SEARCH_RESULT" = "搜尋結果";
+"EBOOK_HORIZONTAL_MARGINS" = "左右間距";
+"EBOOK_TOP_MARGIN" = "上間距";
+"EBOOK_BOTTOM_MARGIN" = "下間距";
+"EBOOK_PARAGRAPH_INDENT" = "首行縮排";
+"EBOOK_READING_MODE" = "閱讀方式";
+"EBOOK_PAGED_READING" = "翻頁閱讀";
+"EBOOK_SCROLL_READING" = "上下捲動";
+"EBOOK_RESET_TO_GLOBAL" = "恢復全域預設設定";
+"EBOOK_GLOBAL_SETTINGS_INFO" = "這些預設設定與漫畫閱讀器完全分開；已經單獨調整過的書籍會保留自己的設定。";
+"EBOOK_DEFAULT_READING_MODE" = "預設閱讀方式";
+"EBOOK_DEFAULT_THEME" = "預設主題";
+"EBOOK_KEEP_SCREEN_AWAKE" = "閱讀時保持螢幕恆亮";

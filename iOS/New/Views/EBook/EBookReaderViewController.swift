@@ -3,6 +3,7 @@
 //  Aidoku
 //
 
+import Combine
 import PDFKit
 import ReadiumNavigator
 import ReadiumShared
@@ -21,6 +22,9 @@ final class EBookReaderViewController: UIViewController {
     private var pdfView: PDFView?
     private var webView: WKWebView?
     private var pageChangeObserver: NSObjectProtocol?
+    private var bookmarkButton: UIBarButtonItem?
+    private var readerBarsHidden = false
+    private var previousIdleTimerDisabled: Bool?
 
     init(bookID: UUID, store: EBookLibraryStore = .shared) {
         self.bookID = bookID
@@ -50,6 +54,27 @@ final class EBookReaderViewController: UIViewController {
             guard let self else { return }
             await self.openBook()
         }
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        previousIdleTimerDisabled = UIApplication.shared.isIdleTimerDisabled
+        UIApplication.shared.isIdleTimerDisabled = EBookPreferences.keepsScreenAwake
+        setReaderBars(hidden: false, animated: false)
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        navigationController?.setNavigationBarHidden(false, animated: false)
+        navigationController?.setToolbarHidden(true, animated: false)
+        if let previousIdleTimerDisabled {
+            UIApplication.shared.isIdleTimerDisabled = previousIdleTimerDisabled
+            self.previousIdleTimerDisabled = nil
+        }
+    }
+
+    override var prefersStatusBarHidden: Bool {
+        readerBarsHidden
     }
 
     private func openBook() async {
@@ -85,12 +110,24 @@ final class EBookReaderViewController: UIViewController {
     private func openEPUB(_ book: EBook, at url: URL) async throws {
         let publication = try await EBookReadiumService.shared.openEPUB(at: url, sender: self)
         let initialLocation = book.locatorJSON.flatMap { try? Locator(jsonString: $0) }
-        let preferences = Self.readiumPreferences(from: book.preferences)
+        let effectivePreferences = store.effectivePreferences(for: book)
+        let preferences = Self.readiumPreferences(from: effectivePreferences)
         let navigator = try EPUBNavigatorViewController(
             publication: publication,
             initialLocation: initialLocation,
             config: .init(
                 preferences: preferences,
+                disablePageTurnsWhileScrolling: true,
+                contentInset: [
+                    .compact: (
+                        top: CGFloat(effectivePreferences.topMargin),
+                        bottom: CGFloat(effectivePreferences.bottomMargin)
+                    ),
+                    .regular: (
+                        top: CGFloat(effectivePreferences.topMargin),
+                        bottom: CGFloat(effectivePreferences.bottomMargin)
+                    ),
+                ],
                 fontFamilyDeclarations: EBookFontStore.shared.readiumDeclarations()
             )
         )
@@ -98,10 +135,15 @@ final class EBookReaderViewController: UIViewController {
 
         self.publication = publication
         epubNavigator = navigator
+        var coverData: Data?
+        if book.coverFileName == nil {
+            coverData = try? await publication.cover().get()?.pngData()
+        }
         store.updateMetadata(
             for: book.id,
             title: publication.metadata.title,
-            author: publication.metadata.authors.map(\.name).joined(separator: ", ")
+            author: publication.metadata.authors.map(\.name).joined(separator: ", "),
+            coverData: coverData
         )
         title = publication.metadata.title ?? book.title
         installChild(navigator)
@@ -161,7 +203,7 @@ final class EBookReaderViewController: UIViewController {
 
     private func loadWebDocument(_ book: EBook, at url: URL) {
         guard let webView else { return }
-        let css = webCSS(for: book.preferences)
+        let css = webCSS(for: store.effectivePreferences(for: book))
         if book.format == .html {
             let script = """
             const style = document.createElement('style');
@@ -202,7 +244,8 @@ final class EBookReaderViewController: UIViewController {
         :root { color-scheme: light dark; }
         html, body { margin: 0; padding: 0; background: \(colors.background); color: \(colors.foreground); }
         body { font-family: \(family); font-size: \(preferences.fontSize)em; line-height: \(preferences.lineHeight); }
-        article { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 48rem; margin: auto; padding: 2.2rem \(1.2 * preferences.pageMargins)rem 5rem; }
+        article { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 48rem; margin: auto; padding: \(preferences.topMargin)px \(1.2 * preferences.pageMargins)rem \(preferences.bottomMargin)px; }
+        p { text-indent: \(preferences.paragraphIndent)rem; margin-block: \(preferences.paragraphSpacing)rem; }
         img, svg, video { max-width: 100%; height: auto; }
         """
     }
@@ -231,6 +274,7 @@ final class EBookReaderViewController: UIViewController {
         messageLabel.textColor = .secondaryLabel
         messageLabel.textAlignment = .center
         messageLabel.numberOfLines = 0
+        messageLabel.lineBreakMode = .byCharWrapping
 
         let stack = UIStackView(arrangedSubviews: [imageView, titleLabel, messageLabel])
         stack.axis = .vertical
@@ -284,27 +328,53 @@ final class EBookReaderViewController: UIViewController {
     }
 
     private func configureEPUBButtons() {
-        navigationItem.rightBarButtonItems = [
-            UIBarButtonItem(
-                image: UIImage(systemName: "textformat.size"),
-                style: .plain,
-                target: self,
-                action: #selector(presentPreferences)
-            ),
-            UIBarButtonItem(
-                image: UIImage(systemName: "bookmark"),
-                style: .plain,
-                target: self,
-                action: #selector(toggleBookmark)
-            ),
-            UIBarButtonItem(
-                image: UIImage(systemName: "list.bullet"),
-                style: .plain,
-                target: self,
-                action: #selector(presentContents)
-            ),
+        let contentsButton = UIBarButtonItem(
+            image: UIImage(systemName: "list.bullet"),
+            style: .plain,
+            target: self,
+            action: #selector(presentContents)
+        )
+        let bookmarkButton = UIBarButtonItem(
+            image: UIImage(systemName: "bookmark"),
+            style: .plain,
+            target: self,
+            action: #selector(toggleBookmark)
+        )
+        let preferencesButton = UIBarButtonItem(
+            image: UIImage(systemName: "textformat.size"),
+            style: .plain,
+            target: self,
+            action: #selector(presentPreferences)
+        )
+        self.bookmarkButton = bookmarkButton
+        navigationItem.rightBarButtonItems = []
+        toolbarItems = [
+            contentsButton,
+            UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
+            bookmarkButton,
+            UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
+            preferencesButton,
         ]
+        navigationController?.setToolbarHidden(false, animated: false)
         updateBookmarkButton()
+    }
+
+    private func setReaderBars(hidden: Bool, animated: Bool) {
+        readerBarsHidden = hidden
+        navigationController?.setNavigationBarHidden(hidden, animated: animated)
+        navigationController?.setToolbarHidden(hidden || epubNavigator == nil, animated: animated)
+        setNeedsStatusBarAppearanceUpdate()
+    }
+
+    private func turnPage(forward: Bool) {
+        guard let navigator = epubNavigator else { return }
+        Task {
+            if forward {
+                await navigator.goForward(options: .animated)
+            } else {
+                await navigator.goBackward(options: .animated)
+            }
+        }
     }
 
     @objc private func toggleBookmark() {
@@ -326,7 +396,7 @@ final class EBookReaderViewController: UIViewController {
     }
 
     private func updateBookmarkButton(book: EBook? = nil) {
-        guard let button = navigationItem.rightBarButtonItems?.dropFirst().first,
+        guard let button = bookmarkButton,
               let json = epubNavigator?.currentLocation?.jsonString
         else { return }
         let book = book ?? store.book(withID: bookID)
@@ -342,9 +412,16 @@ final class EBookReaderViewController: UIViewController {
                 let links = try await publication.tableOfContents().get()
                 let entries = Self.flatten(links)
                 let bookmarks = store.book(withID: bookID)?.bookmarks ?? []
-                let view = EBookContentsView(entries: entries, bookmarks: bookmarks) { [weak self] entry in
+                let view = EBookContentsView(
+                    publication: publication,
+                    entries: entries,
+                    bookmarks: bookmarks
+                ) { [weak self] entry in
                     self?.dismiss(animated: true)
                     Task { await self?.epubNavigator?.go(to: entry.link, options: .animated) }
+                } onSearchResult: { [weak self] locator in
+                    self?.dismiss(animated: true)
+                    Task { await self?.epubNavigator?.go(to: locator, options: .animated) }
                 } onBookmark: { [weak self] bookmark in
                     self?.dismiss(animated: true)
                     guard let locator = try? Locator(jsonString: bookmark.locatorJSON) else { return }
@@ -370,16 +447,27 @@ final class EBookReaderViewController: UIViewController {
 
     @objc private func presentPreferences() {
         guard let book = store.book(withID: bookID) else { return }
-        let view = EBookPreferencesView(preferences: book.preferences) { [weak self] preferences in
+        let effectivePreferences = store.effectivePreferences(for: book)
+        let view = EBookPreferencesView(preferences: effectivePreferences) { [weak self] preferences in
             guard let self else { return }
             store.savePreferences(preferences, for: bookID)
-            epubNavigator?.submitPreferences(Self.readiumPreferences(from: preferences))
-            if let updatedBook = store.book(withID: bookID) {
-                loadWebDocument(updatedBook, at: store.fileURL(for: updatedBook))
-            }
+            apply(preferences)
+        } onReset: { [weak self] in
+            guard let self else { return }
+            store.resetPreferencesToGlobal(for: bookID)
+            apply(EBookPreferences.globalDefaults)
         }
         let controller = UIHostingController(rootView: view)
         present(controller, animated: true)
+    }
+
+    private func apply(_ preferences: EBookPreferences) {
+        epubNavigator?.submitPreferences(Self.readiumPreferences(from: preferences))
+        epubNavigator?.view.setNeedsLayout()
+        epubNavigator?.view.layoutIfNeeded()
+        if let updatedBook = store.book(withID: bookID) {
+            loadWebDocument(updatedBook, at: store.fileURL(for: updatedBook))
+        }
     }
 
     @objc private func dismissPresentedController() {
@@ -405,6 +493,7 @@ final class EBookReaderViewController: UIViewController {
             fontSize: preferences.fontSize,
             lineHeight: preferences.lineHeight,
             pageMargins: preferences.pageMargins,
+            paragraphIndent: preferences.paragraphIndent,
             paragraphSpacing: preferences.paragraphSpacing,
             publisherStyles: preferences.usesPublisherStyles,
             scroll: preferences.isScrollEnabled,
@@ -427,6 +516,36 @@ final class EBookReaderViewController: UIViewController {
 }
 
 extension EBookReaderViewController: EPUBNavigatorDelegate {
+    func navigatorContentInset(_ navigator: VisualNavigator) -> UIEdgeInsets? {
+        guard let book = store.book(withID: bookID) else { return nil }
+        let preferences = store.effectivePreferences(for: book)
+        return UIEdgeInsets(
+            top: CGFloat(preferences.topMargin),
+            left: 0,
+            bottom: CGFloat(preferences.bottomMargin),
+            right: 0
+        )
+    }
+
+    func navigator(_ navigator: VisualNavigator, didTapAt point: CGPoint) {
+        guard let book = store.book(withID: bookID) else { return }
+        let preferences = store.effectivePreferences(for: book)
+        let relativeX = point.x / max(view.bounds.width, 1)
+
+        if (0.28 ... 0.72).contains(relativeX) {
+            setReaderBars(hidden: !readerBarsHidden, animated: true)
+            return
+        }
+
+        guard !preferences.isScrollEnabled else { return }
+        let isRTL = publication?.metadata.readingProgression == .rtl
+        if relativeX < 0.28 {
+            turnPage(forward: isRTL)
+        } else {
+            turnPage(forward: !isRTL)
+        }
+    }
+
     func navigator(_ navigator: Navigator, locationDidChange locator: Locator) {
         guard let json = locator.jsonString else { return }
         store.saveLocator(json, for: bookID)
@@ -447,27 +566,86 @@ struct EBookContentsEntry: Identifiable {
     let depth: Int
 }
 
+private final class EBookSearchModel: ObservableObject {
+    @Published var query = ""
+    @Published private(set) var results: [Locator] = []
+    @Published private(set) var isLoading = false
+    @Published private(set) var errorMessage: String?
+
+    private var searchTask: Task<Void, Never>?
+
+    deinit {
+        searchTask?.cancel()
+    }
+
+    func search(in publication: Publication) {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        searchTask?.cancel()
+        results = []
+        errorMessage = nil
+
+        guard !query.isEmpty else {
+            isLoading = false
+            return
+        }
+
+        isLoading = true
+        searchTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            switch await publication.search(query: query) {
+            case let .failure(error):
+                errorMessage = String(describing: error)
+                isLoading = false
+
+            case let .success(iterator):
+                while !Task.isCancelled {
+                    switch await iterator.next() {
+                    case let .success(collection):
+                        guard let collection else {
+                            isLoading = false
+                            return
+                        }
+                        results.append(contentsOf: collection.locators)
+
+                    case let .failure(error):
+                        errorMessage = String(describing: error)
+                        isLoading = false
+                        return
+                    }
+                }
+                isLoading = false
+            }
+        }
+    }
+}
+
 private struct EBookContentsView: View {
     enum Section: CaseIterable {
         case contents
+        case search
         case bookmarks
 
         var title: String {
             switch self {
             case .contents:
                 NSLocalizedString("EBOOK_CONTENTS", comment: "E-book table of contents title")
+            case .search:
+                NSLocalizedString("SEARCH", comment: "E-book search tab")
             case .bookmarks:
                 NSLocalizedString("EBOOK_BOOKMARKS", comment: "E-book bookmarks title")
             }
         }
     }
 
+    let publication: Publication
     let entries: [EBookContentsEntry]
     let bookmarks: [EBookBookmark]
     let onEntry: (EBookContentsEntry) -> Void
+    let onSearchResult: (Locator) -> Void
     let onBookmark: (EBookBookmark) -> Void
 
     @State private var section: Section = .contents
+    @StateObject private var searchModel = EBookSearchModel()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -477,38 +655,99 @@ private struct EBookContentsView: View {
             .pickerStyle(.segmented)
             .padding()
 
-            List {
-                if section == .contents {
-                    ForEach(entries) { entry in
-                        Button {
-                            onEntry(entry)
-                        } label: {
-                            Text(entry.link.title ?? NSLocalizedString("EBOOK_UNTITLED_SECTION", comment: "Untitled table of contents entry"))
-                                .foregroundStyle(.primary)
-                                .padding(.leading, CGFloat(entry.depth) * 16)
-                        }
+            switch section {
+            case .contents:
+                List(entries) { entry in
+                    Button {
+                        onEntry(entry)
+                    } label: {
+                        Text(entry.link.title ?? NSLocalizedString("EBOOK_UNTITLED_SECTION", comment: "Untitled table of contents entry"))
+                            .foregroundStyle(.primary)
+                            .padding(.leading, CGFloat(entry.depth) * 16)
                     }
-                } else if bookmarks.isEmpty {
-                    Text(NSLocalizedString("EBOOK_NO_BOOKMARKS", comment: "Empty e-book bookmarks message"))
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(bookmarks) { bookmark in
-                        Button {
-                            onBookmark(bookmark)
-                        } label: {
-                            VStack(alignment: .leading) {
-                                Text(bookmark.title)
-                                    .foregroundStyle(.primary)
-                                Text(bookmark.createdAt, style: .date)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                }
+                .listStyle(.plain)
+
+            case .search:
+                searchResults
+
+            case .bookmarks:
+                List {
+                    if bookmarks.isEmpty {
+                        Text(NSLocalizedString("EBOOK_NO_BOOKMARKS", comment: "Empty e-book bookmarks message"))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(bookmarks) { bookmark in
+                            Button {
+                                onBookmark(bookmark)
+                            } label: {
+                                VStack(alignment: .leading) {
+                                    Text(bookmark.title)
+                                        .foregroundStyle(.primary)
+                                    Text(bookmark.createdAt, style: .date)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                         }
                     }
                 }
+                .listStyle(.plain)
             }
-            .listStyle(.plain)
         }
+    }
+
+    private var searchResults: some View {
+        List {
+            Section {
+                HStack {
+                    TextField(NSLocalizedString("EBOOK_SEARCH_PLACEHOLDER", comment: "Search inside e-book placeholder"), text: $searchModel.query)
+                        .submitLabel(.search)
+                        .onSubmit {
+                            searchModel.search(in: publication)
+                        }
+                    Button(NSLocalizedString("SEARCH", comment: "")) {
+                        searchModel.search(in: publication)
+                    }
+                    .disabled(searchModel.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+
+            if searchModel.isLoading {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                    Spacer()
+                }
+            }
+
+            if let errorMessage = searchModel.errorMessage {
+                Text(errorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else if !searchModel.query.isEmpty && !searchModel.isLoading && searchModel.results.isEmpty {
+                Text(NSLocalizedString("EBOOK_NO_SEARCH_RESULTS", comment: "No e-book search results"))
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(Array(searchModel.results.enumerated()), id: \.offset) { _, locator in
+                Button {
+                    onSearchResult(locator)
+                } label: {
+                    let text = locator.text.sanitized()
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(locator.title ?? text.highlight ?? NSLocalizedString("EBOOK_SEARCH_RESULT", comment: "E-book search result"))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text([text.before, text.highlight, text.after].compactMap { $0 }.joined(separator: " "))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(3)
+                    }
+                }
+            }
+        }
+        .listStyle(.plain)
     }
 }
 
@@ -533,6 +772,7 @@ private struct EBookPreferencesView: View {
 
     @State var preferences: EBookPreferences
     let onSave: (EBookPreferences) -> Void
+    let onReset: () -> Void
 
     @State private var isImportingFont = false
     @State private var fontMessage: String?
@@ -566,13 +806,26 @@ private struct EBookPreferencesView: View {
                 Section(NSLocalizedString("EBOOK_TYPOGRAPHY", comment: "E-book typography settings section")) {
                     valueSlider(NSLocalizedString("EBOOK_FONT_SIZE", comment: "E-book font size setting"), value: $preferences.fontSize, range: 0.7 ... 2, step: 0.05)
                     valueSlider(NSLocalizedString("EBOOK_LINE_HEIGHT", comment: "E-book line height setting"), value: $preferences.lineHeight, range: 1 ... 2.4, step: 0.05)
-                    valueSlider(NSLocalizedString("EBOOK_PAGE_MARGINS", comment: "E-book page margins setting"), value: $preferences.pageMargins, range: 0 ... 2, step: 0.1)
+                    valueSlider(NSLocalizedString("EBOOK_HORIZONTAL_MARGINS", comment: "E-book horizontal margins setting"), value: $preferences.pageMargins, range: 0 ... 2, step: 0.1)
+                    valueSlider(NSLocalizedString("EBOOK_TOP_MARGIN", comment: "E-book top margin setting"), value: $preferences.topMargin, range: 0 ... 100, step: 2)
+                    valueSlider(NSLocalizedString("EBOOK_BOTTOM_MARGIN", comment: "E-book bottom margin setting"), value: $preferences.bottomMargin, range: 0 ... 100, step: 2)
+                    valueSlider(NSLocalizedString("EBOOK_PARAGRAPH_INDENT", comment: "E-book paragraph indent setting"), value: $preferences.paragraphIndent, range: 0 ... 4, step: 0.1)
                     valueSlider(NSLocalizedString("EBOOK_PARAGRAPH_SPACING", comment: "E-book paragraph spacing setting"), value: $preferences.paragraphSpacing, range: 0 ... 2, step: 0.1)
                 }
 
                 Section(NSLocalizedString("EBOOK_LAYOUT", comment: "E-book layout settings section")) {
-                    Toggle(NSLocalizedString("EBOOK_SCROLLING", comment: "E-book scrolling setting"), isOn: $preferences.isScrollEnabled)
+                    Picker(NSLocalizedString("EBOOK_READING_MODE", comment: "E-book reading mode"), selection: $preferences.isScrollEnabled) {
+                        Text(NSLocalizedString("EBOOK_PAGED_READING", comment: "Paginated e-book reading")).tag(false)
+                        Text(NSLocalizedString("EBOOK_SCROLL_READING", comment: "Scrolling e-book reading")).tag(true)
+                    }
                     Toggle(NSLocalizedString("EBOOK_USE_PUBLISHER_STYLES", comment: "Use publisher styles setting"), isOn: $preferences.usesPublisherStyles)
+                }
+
+                Section {
+                    Button(NSLocalizedString("EBOOK_RESET_TO_GLOBAL", comment: "Reset e-book settings to global defaults"), role: .destructive) {
+                        onReset()
+                        dismiss()
+                    }
                 }
 
                 if let fontMessage {

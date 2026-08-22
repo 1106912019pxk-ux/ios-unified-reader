@@ -16,6 +16,7 @@ final class EBookLibraryStore: ObservableObject {
     let booksDirectory: URL
 
     private let metadataDirectory: URL
+    private let coversDirectory: URL
     private let metadataURL: URL
     private let fileManager: FileManager
 
@@ -27,7 +28,10 @@ final class EBookLibraryStore: ObservableObject {
 
         let applicationSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         metadataDirectory = applicationSupport.appendingPathComponent("EBookReader", isDirectory: true)
+        coversDirectory = metadataDirectory.appendingPathComponent("Covers", isDirectory: true)
         metadataURL = metadataDirectory.appendingPathComponent("library.json")
+
+        EBookPreferences.registerGlobalDefaults()
 
         do {
             try prepareDirectories()
@@ -48,7 +52,7 @@ final class EBookLibraryStore: ObservableObject {
     }
 
     @discardableResult
-    func importFiles(_ urls: [URL]) throws -> [EBook] {
+    func importFiles(_ urls: [URL]) async throws -> [EBook] {
         var imported: [EBook] = []
 
         for sourceURL in urls {
@@ -63,16 +67,44 @@ final class EBookLibraryStore: ObservableObject {
                 }
             }
 
-            let destinationURL = uniqueDestination(for: sourceURL.lastPathComponent)
+            let id = UUID()
+            let ext = sourceURL.pathExtension.lowercased()
+            let destinationURL = booksDirectory.appendingPathComponent(
+                ext.isEmpty ? id.uuidString : "\(id.uuidString).\(ext)",
+                isDirectory: false
+            )
             try fileManager.copyItem(at: sourceURL, to: destinationURL)
 
-            let book = EBook(
-                fileName: destinationURL.lastPathComponent,
-                format: format,
-                title: destinationURL.deletingPathExtension().lastPathComponent
-            )
-            books.append(book)
-            imported.append(book)
+            do {
+                let metadata: EBookPublicationMetadata?
+                if format == .epub {
+                    metadata = try await EBookReadiumService.shared.inspectEPUB(at: destinationURL)
+                } else {
+                    metadata = nil
+                }
+
+                let coverFileName: String?
+                if let coverData = metadata?.coverData {
+                    coverFileName = try saveCover(coverData, for: id)
+                } else {
+                    coverFileName = nil
+                }
+                let fallbackTitle = sourceURL.deletingPathExtension().lastPathComponent
+                let book = EBook(
+                    id: id,
+                    fileName: destinationURL.lastPathComponent,
+                    format: format,
+                    title: metadata?.title ?? fallbackTitle,
+                    author: metadata?.author,
+                    coverFileName: coverFileName,
+                    preferences: EBookPreferences.globalDefaults
+                )
+                books.append(book)
+                imported.append(book)
+            } catch {
+                try? fileManager.removeItem(at: destinationURL)
+                throw error
+            }
         }
 
         sortBooks()
@@ -85,22 +117,60 @@ final class EBookLibraryStore: ObservableObject {
         booksDirectory.appendingPathComponent(book.fileName, isDirectory: false)
     }
 
+    func coverURL(for book: EBook) -> URL? {
+        guard let coverFileName = book.coverFileName else { return nil }
+        let url = coversDirectory.appendingPathComponent(coverFileName, isDirectory: false)
+        return fileManager.fileExists(atPath: url.path) ? url : nil
+    }
+
+    func refreshEPUBMetadata() async {
+        let candidates = books.filter { $0.format == .epub && $0.coverFileName == nil }
+        for book in candidates {
+            do {
+                let metadata = try await EBookReadiumService.shared.inspectEPUB(at: fileURL(for: book))
+                updateMetadata(
+                    for: book.id,
+                    title: metadata.title,
+                    author: metadata.author,
+                    coverData: metadata.coverData
+                )
+            } catch {
+                // Keep the book available so opening it can show the complete diagnostic.
+            }
+        }
+    }
+
     func delete(_ book: EBook) throws {
         let url = fileURL(for: book)
         if fileManager.fileExists(atPath: url.path) {
             try fileManager.removeItem(at: url)
         }
+        if let coverURL = coverURL(for: book) {
+            try? fileManager.removeItem(at: coverURL)
+        }
         books.removeAll { $0.id == book.id }
         try save()
     }
 
-    func updateMetadata(for id: UUID, title: String?, author: String?) {
+    func updateMetadata(for id: UUID, title: String?, author: String?, coverData: Data? = nil) {
+        var coverFileName: String?
+        if let coverData {
+            do {
+                coverFileName = try saveCover(coverData, for: id)
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
+
         mutateBook(id) { book in
             if let title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 book.title = title
             }
             if let author, !author.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 book.author = author
+            }
+            if let coverFileName {
+                book.coverFileName = coverFileName
             }
         }
     }
@@ -117,8 +187,22 @@ final class EBookLibraryStore: ObservableObject {
         mutateBook(id) { $0.pdfPageIndex = pageIndex }
     }
 
+    func effectivePreferences(for book: EBook) -> EBookPreferences {
+        book.usesGlobalPreferences ? EBookPreferences.globalDefaults : book.preferences
+    }
+
     func savePreferences(_ preferences: EBookPreferences, for id: UUID) {
-        mutateBook(id) { $0.preferences = preferences }
+        mutateBook(id) {
+            $0.preferences = preferences
+            $0.usesGlobalPreferences = false
+        }
+    }
+
+    func resetPreferencesToGlobal(for id: UUID) {
+        mutateBook(id) {
+            $0.preferences = EBookPreferences.globalDefaults
+            $0.usesGlobalPreferences = true
+        }
     }
 
     func addBookmark(title: String, locatorJSON: String, to id: UUID) {
@@ -141,6 +225,7 @@ final class EBookLibraryStore: ObservableObject {
     private func prepareDirectories() throws {
         try fileManager.createDirectory(at: booksDirectory, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: metadataDirectory, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: coversDirectory, withIntermediateDirectories: true)
     }
 
     private func load() throws {
@@ -160,6 +245,8 @@ final class EBookLibraryStore: ObservableObject {
     }
 
     private func reconcileFiles() throws {
+        try migrateStoredFileNames()
+
         let urls = try fileManager.contentsOfDirectory(
             at: booksDirectory,
             includingPropertiesForKeys: [.isRegularFileKey],
@@ -178,7 +265,8 @@ final class EBookLibraryStore: ObservableObject {
             books.append(EBook(
                 fileName: url.lastPathComponent,
                 format: format,
-                title: url.deletingPathExtension().lastPathComponent
+                title: url.deletingPathExtension().lastPathComponent,
+                preferences: EBookPreferences.globalDefaults
             ))
         }
 
@@ -186,19 +274,29 @@ final class EBookLibraryStore: ObservableObject {
         try save()
     }
 
-    private func uniqueDestination(for originalName: String) -> URL {
-        let originalURL = URL(fileURLWithPath: originalName)
-        let stem = originalURL.deletingPathExtension().lastPathComponent
-        let ext = originalURL.pathExtension
-        var candidate = booksDirectory.appendingPathComponent(originalName)
-        var suffix = 2
+    private func migrateStoredFileNames() throws {
+        for index in books.indices {
+            let currentURL = fileURL(for: books[index])
+            guard fileManager.fileExists(atPath: currentURL.path) else { continue }
 
-        while fileManager.fileExists(atPath: candidate.path) {
-            let name = ext.isEmpty ? "\(stem) \(suffix)" : "\(stem) \(suffix).\(ext)"
-            candidate = booksDirectory.appendingPathComponent(name)
-            suffix += 1
+            let ext = currentURL.pathExtension.lowercased()
+            let desiredName = ext.isEmpty
+                ? books[index].id.uuidString
+                : "\(books[index].id.uuidString).\(ext)"
+            guard books[index].fileName != desiredName else { continue }
+
+            let destinationURL = booksDirectory.appendingPathComponent(desiredName, isDirectory: false)
+            guard !fileManager.fileExists(atPath: destinationURL.path) else { continue }
+            try fileManager.moveItem(at: currentURL, to: destinationURL)
+            books[index].fileName = desiredName
         }
-        return candidate
+    }
+
+    private func saveCover(_ data: Data, for id: UUID) throws -> String {
+        let fileName = "\(id.uuidString).png"
+        let url = coversDirectory.appendingPathComponent(fileName, isDirectory: false)
+        try data.write(to: url, options: .atomic)
+        return fileName
     }
 
     private func sortBooks() {

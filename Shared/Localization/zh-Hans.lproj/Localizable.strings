@@ -780,3 +780,22 @@
 "EBOOK_USE_PUBLISHER_STYLES" = "使用出版方样式";
 "EBOOK_READING_SETTINGS" = "阅读设置";
 "EBOOK_FONT_IMPORTED_REOPEN" = "字体已导入。请重新打开本书，以便 EPUB 内容使用新导入的字体。";
+
+"EBOOK_ERROR_EPUB_ARCHIVE" = "无法读取 EPUB 压缩包。详细信息：%@";
+"EBOOK_ERROR_EPUB_STRUCTURE" = "无法打开 EPUB 内部结构。详细信息：%@";
+"EBOOK_IMPORTING" = "正在导入并检查书籍…";
+"EBOOK_SEARCH_PLACEHOLDER" = "搜索本书内容";
+"EBOOK_NO_SEARCH_RESULTS" = "没有找到匹配内容";
+"EBOOK_SEARCH_RESULT" = "搜索结果";
+"EBOOK_HORIZONTAL_MARGINS" = "左右间距";
+"EBOOK_TOP_MARGIN" = "上间距";
+"EBOOK_BOTTOM_MARGIN" = "下间距";
+"EBOOK_PARAGRAPH_INDENT" = "首行缩进";
+"EBOOK_READING_MODE" = "阅读方式";
+"EBOOK_PAGED_READING" = "翻页阅读";
+"EBOOK_SCROLL_READING" = "上下滚动";
+"EBOOK_RESET_TO_GLOBAL" = "恢复全局默认设置";
+"EBOOK_GLOBAL_SETTINGS_INFO" = "这些默认设置与漫画阅读器完全分开；已经单独调整过的书籍会保留自己的设置。";
+"EBOOK_DEFAULT_READING_MODE" = "默认阅读方式";
+"EBOOK_DEFAULT_THEME" = "默认主题";
+"EBOOK_KEEP_SCREEN_AWAKE" = "阅读时保持屏幕常亮";

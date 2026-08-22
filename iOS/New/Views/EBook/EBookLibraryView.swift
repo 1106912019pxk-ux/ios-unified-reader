@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 final class EBookLibraryViewController: UIViewController {
@@ -18,10 +19,9 @@ final class EBookLibraryViewController: UIViewController {
 
         let rootView = EBookLibraryView(store: store) { [weak self] book in
             guard let self else { return }
-            navigationController?.pushViewController(
-                EBookReaderViewController(bookID: book.id, store: store),
-                animated: true
-            )
+            let reader = EBookReaderViewController(bookID: book.id, store: store)
+            reader.hidesBottomBarWhenPushed = true
+            navigationController?.pushViewController(reader, animated: true)
         }
         let hostingController = UIHostingController(rootView: rootView)
         addChild(hostingController)
@@ -44,6 +44,7 @@ struct EBookLibraryView: View {
 
     @State private var isImporting = false
     @State private var importError: String?
+    @State private var isImportingBooks = false
 
     private let columns = [
         GridItem(.adaptive(minimum: 136, maximum: 190), spacing: 18),
@@ -96,10 +97,14 @@ struct EBookLibraryView: View {
             ) { urls in
                 isImporting = false
                 guard !urls.isEmpty else { return }
-                do {
-                    try store.importFiles(urls)
-                } catch {
-                    importError = error.localizedDescription
+                isImportingBooks = true
+                Task {
+                    defer { isImportingBooks = false }
+                    do {
+                        try await store.importFiles(urls)
+                    } catch {
+                        importError = error.localizedDescription
+                    }
                 }
             }
         }
@@ -111,8 +116,19 @@ struct EBookLibraryView: View {
         } message: {
             Text(importError ?? "")
         }
+        .overlay {
+            if isImportingBooks {
+                ZStack {
+                    Color.black.opacity(0.12).ignoresSafeArea()
+                    ProgressView(NSLocalizedString("EBOOK_IMPORTING", comment: "Importing e-book progress"))
+                        .padding(20)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                }
+            }
+        }
         .task {
             store.refresh()
+            await store.refreshEPUBMetadata()
         }
     }
 
@@ -144,19 +160,27 @@ struct EBookLibraryView: View {
         } label: {
             VStack(alignment: .leading, spacing: 9) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(coverGradient(for: book.format))
-                    VStack(spacing: 10) {
-                        Image(systemName: icon(for: book.format))
-                            .font(.system(size: 36, weight: .light))
-                        Text(book.format.displayName)
-                            .font(.caption2.weight(.bold))
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 4)
-                            .background(.ultraThinMaterial, in: Capsule())
+                    if let coverURL = store.coverURL(for: book),
+                       let image = UIImage(contentsOfFile: coverURL.path) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(coverGradient(for: book.format))
+                        VStack(spacing: 10) {
+                            Image(systemName: icon(for: book.format))
+                                .font(.system(size: 36, weight: .light))
+                            Text(book.format.displayName)
+                                .font(.caption2.weight(.bold))
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 4)
+                                .background(.ultraThinMaterial, in: Capsule())
+                        }
+                        .foregroundStyle(.white)
                     }
-                    .foregroundStyle(.white)
                 }
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .aspectRatio(0.69, contentMode: .fit)
                 .shadow(color: .black.opacity(0.16), radius: 7, y: 4)
 

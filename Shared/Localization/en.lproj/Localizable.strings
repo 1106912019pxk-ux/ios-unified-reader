@@ -899,3 +899,22 @@
 "EBOOK_USE_PUBLISHER_STYLES" = "Use Publisher Styles";
 "EBOOK_READING_SETTINGS" = "Reading Settings";
 "EBOOK_FONT_IMPORTED_REOPEN" = "Font imported. Reopen this book once to make newly imported fonts available to EPUB content.";
+
+"EBOOK_ERROR_EPUB_ARCHIVE" = "The EPUB archive could not be read. Details: %@";
+"EBOOK_ERROR_EPUB_STRUCTURE" = "The EPUB structure could not be opened. Details: %@";
+"EBOOK_IMPORTING" = "Importing and checking book…";
+"EBOOK_SEARCH_PLACEHOLDER" = "Search inside this book";
+"EBOOK_NO_SEARCH_RESULTS" = "No matching text found";
+"EBOOK_SEARCH_RESULT" = "Search Result";
+"EBOOK_HORIZONTAL_MARGINS" = "Left and Right Margins";
+"EBOOK_TOP_MARGIN" = "Top Margin";
+"EBOOK_BOTTOM_MARGIN" = "Bottom Margin";
+"EBOOK_PARAGRAPH_INDENT" = "First-line Indent";
+"EBOOK_READING_MODE" = "Reading Mode";
+"EBOOK_PAGED_READING" = "Paginated";
+"EBOOK_SCROLL_READING" = "Vertical Scrolling";
+"EBOOK_RESET_TO_GLOBAL" = "Reset to Global Defaults";
+"EBOOK_GLOBAL_SETTINGS_INFO" = "These defaults are separate from manga reader settings. Existing per-book overrides are preserved.";
+"EBOOK_DEFAULT_READING_MODE" = "Default Reading Mode";
+"EBOOK_DEFAULT_THEME" = "Default Theme";
+"EBOOK_KEEP_SCREEN_AWAKE" = "Keep Screen Awake While Reading";

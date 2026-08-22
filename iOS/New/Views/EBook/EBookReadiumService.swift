@@ -8,6 +8,12 @@ import ReadiumShared
 import ReadiumStreamer
 import UIKit
 
+struct EBookPublicationMetadata: Sendable {
+    var title: String?
+    var author: String?
+    var coverData: Data?
+}
+
 final class EBookReadiumService {
     static let shared = EBookReadiumService()
 
@@ -28,20 +34,53 @@ final class EBookReadiumService {
         )
     }
 
-    func openEPUB(at url: URL, sender: UIViewController) async throws -> Publication {
+    func inspectEPUB(at url: URL) async throws -> EBookPublicationMetadata {
+        let publication = try await openEPUB(at: url, sender: nil)
+        let coverData = try? await publication.cover().get()?.pngData()
+        return EBookPublicationMetadata(
+            title: publication.metadata.title,
+            author: publication.metadata.authors.map(\.name).joined(separator: ", ").nilIfEmpty,
+            coverData: coverData
+        )
+    }
+
+    func openEPUB(at url: URL, sender: UIViewController?) async throws -> Publication {
         guard let fileURL = FileURL(url: url) else {
             throw EBookReaderError.invalidFileURL
         }
-        let asset = try await assetRetriever.retrieve(url: fileURL).get()
-        let publication = try await publicationOpener.open(
+
+        let asset: Asset
+        switch await assetRetriever.retrieve(url: fileURL, mediaType: .epub) {
+        case let .success(value):
+            asset = value
+        case let .failure(error):
+            throw EBookReaderError.assetRetrievalFailed(Self.describe(error))
+        }
+
+        let publication: Publication
+        switch await publicationOpener.open(
             asset: asset,
             allowUserInteraction: false,
             sender: sender
-        ).get()
+        ) {
+        case let .success(value):
+            publication = value
+        case let .failure(error):
+            throw EBookReaderError.publicationOpenFailed(Self.describe(error))
+        }
+
         guard !publication.isRestricted else {
             throw EBookReaderError.restrictedPublication
         }
         return publication
+    }
+
+    private static func describe(_ error: Error) -> String {
+        let nsError = error as NSError
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? Error {
+            return "\(String(describing: error)) — \(underlying.localizedDescription)"
+        }
+        return String(describing: error)
     }
 }
 
@@ -50,6 +89,8 @@ enum EBookReaderError: LocalizedError {
     case missingFile
     case restrictedPublication
     case unsupportedReader(EBookFormat)
+    case assetRetrievalFailed(String)
+    case publicationOpenFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -64,6 +105,22 @@ enum EBookReaderError: LocalizedError {
                 format: NSLocalizedString("EBOOK_ERROR_READER_UNAVAILABLE", comment: "Unavailable e-book reader error"),
                 format.displayName
             )
+        case let .assetRetrievalFailed(detail):
+            String(
+                format: NSLocalizedString("EBOOK_ERROR_EPUB_ARCHIVE", comment: "Unreadable EPUB archive error"),
+                detail
+            )
+        case let .publicationOpenFailed(detail):
+            String(
+                format: NSLocalizedString("EBOOK_ERROR_EPUB_STRUCTURE", comment: "Invalid EPUB structure error"),
+                detail
+            )
         }
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }

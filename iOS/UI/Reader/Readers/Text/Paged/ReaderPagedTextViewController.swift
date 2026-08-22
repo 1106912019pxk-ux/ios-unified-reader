@@ -110,7 +110,17 @@ class ReaderPagedTextViewController: BaseObservingViewController {
         let textSettingChanged: (Notification) -> Void = { [weak self] _ in
             self?.updateTextConfig()
         }
-        for key in ["Reader.textFontSize", "Reader.textLineSpacing", "Reader.textHorizontalPadding", "Reader.textFontFamily"] {
+        for key in [
+            "Reader.textFontSize",
+            "Reader.textLineSpacing",
+            "Reader.textHorizontalPadding",
+            "Reader.textTopPadding",
+            "Reader.textBottomPadding",
+            "Reader.textParagraphSpacing",
+            "Reader.textFirstLineIndent",
+            "Reader.textFontFamily",
+            "Reader.textBackgroundColor"
+        ] {
             addObserver(forName: key, using: textSettingChanged)
         }
     }
@@ -128,9 +138,25 @@ class ReaderPagedTextViewController: BaseObservingViewController {
         if let horizontalPadding = UserDefaults.standard.object(forKey: "Reader.textHorizontalPadding") as? CGFloat {
             config.horizontalPadding = horizontalPadding
         }
+        if let topPadding = UserDefaults.standard.object(forKey: "Reader.textTopPadding") as? CGFloat {
+            config.topPadding = topPadding
+        }
+        if let bottomPadding = UserDefaults.standard.object(forKey: "Reader.textBottomPadding") as? CGFloat {
+            config.bottomPadding = bottomPadding
+        }
+        if let paragraphSpacing = UserDefaults.standard.object(forKey: "Reader.textParagraphSpacing") as? CGFloat {
+            config.paragraphSpacing = paragraphSpacing
+        }
+        if let firstLineIndent = UserDefaults.standard.object(forKey: "Reader.textFirstLineIndent") as? CGFloat {
+            config.firstLineIndent = firstLineIndent
+        }
         if let fontFamily = UserDefaults.standard.string(forKey: "Reader.textFontFamily") {
             config.fontName = fontFamily
         }
+        config.theme = .current
+
+        view.backgroundColor = config.theme.backgroundColor
+        pageViewController.view.backgroundColor = config.theme.backgroundColor
 
         paginator.updateConfig(config)
 
@@ -214,9 +240,9 @@ class ReaderPagedTextViewController: BaseObservingViewController {
         // Compute fixed text insets for child page VCs (must match pagination geometry)
         let config = paginator.currentConfig
         textInsets = UIEdgeInsets(
-            top: windowSafeArea.top + toolbarBuffer / 2 + config.verticalPadding,
+            top: windowSafeArea.top + toolbarBuffer / 2 + config.topPadding,
             left: windowSafeArea.left + config.horizontalPadding,
-            bottom: windowSafeArea.bottom + toolbarBuffer / 2 + config.verticalPadding,
+            bottom: windowSafeArea.bottom + toolbarBuffer / 2 + config.bottomPadding,
             right: windowSafeArea.right + config.horizontalPadding
         )
 
@@ -427,7 +453,7 @@ class ReaderPagedTextViewController: BaseObservingViewController {
         guard index >= 0 && index < pages.count else {
             // Return empty view controller as fallback
             let vc = UIViewController()
-            vc.view.backgroundColor = .systemBackground
+            vc.view.backgroundColor = TextReaderTheme.current.backgroundColor
             return vc
         }
 

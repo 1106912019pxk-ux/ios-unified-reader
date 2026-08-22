@@ -28,7 +28,7 @@ class TextDoublePageViewController: UIViewController {
     private lazy var rightTextView: UITextView = createTextView()
     private lazy var dividerView: UIView = {
         let v = UIView()
-        v.backgroundColor = .separator
+        v.backgroundColor = TextReaderTheme.current.secondaryForegroundColor.withAlphaComponent(0.25)
         return v
     }()
 
@@ -47,7 +47,7 @@ class TextDoublePageViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = TextReaderTheme.current.backgroundColor
 
         view.addSubview(dividerView)
         dividerView.translatesAutoresizingMaskIntoConstraints = false
@@ -98,7 +98,7 @@ class TextDoublePageViewController: UIViewController {
         tv.isScrollEnabled = false
         tv.isUserInteractionEnabled = false  // Let taps pass through to parent tap zones
         tv.textContainer.lineFragmentPadding = 0  // Match paginator's layout width
-        tv.backgroundColor = .systemBackground
+        tv.backgroundColor = TextReaderTheme.current.backgroundColor
         return tv
     }
 }

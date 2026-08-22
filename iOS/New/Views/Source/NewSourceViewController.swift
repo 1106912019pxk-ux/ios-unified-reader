@@ -144,7 +144,10 @@ class NewSourceViewController: UIViewController {
             listings: listingsBinding,
             selectedListing: headerListingSelectionBinding,
             onFilterButtonClick: source.id == "zh.picacomic" || source.key == "zh.picacomic"
-                ? { [weak self] in self?.showSearchView(focusSearch: false) }
+                ? { [weak self] in
+                    guard let self else { return }
+                    self.showSearchView(focusSearch: false)
+                }
                 : nil
         )
     }

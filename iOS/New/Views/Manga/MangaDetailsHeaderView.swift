@@ -170,11 +170,30 @@ struct MangaDetailsHeaderView: View {
                    let metadata = PicaDetailMetadata(description: description)
                 {
                     if let summary = metadata.summary {
-                        SelectableTextView(text: summary, font: .preferredFont(forTextStyle: .subheadline))
-                            .padding(.bottom, 12)
+                        Text(summary)
+                            .lineLimit(descriptionExpanded ? nil : 4)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                            .foregroundStyle(.secondary)
+                            .font(.subheadline)
+                            .padding(.bottom, 6)
                             .padding(.horizontal, 20)
                     }
-                    picaMetadataView(metadata)
+                    if descriptionExpanded {
+                        picaMetadataView(metadata)
+                    } else {
+                        HStack {
+                            Spacer()
+                            Button(NSLocalizedString("MORE")) {
+                                descriptionExpanded = true
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.tint)
+                            .font(.system(size: 12))
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 12)
+                    }
                 } else {
                     ExpandableTextView(text: description, expanded: $descriptionExpanded)
                         .fixedSize(horizontal: false, vertical: true)
@@ -277,9 +296,15 @@ struct MangaDetailsHeaderView: View {
             .lineLimit(2)
             .foregroundStyle(isPicaSource ? Color.accentColor : Color.secondary)
             .font(.callout)
-            .underline(isPicaSource)
 
-        if let source, source.supportsAuthorSearch || isPicaSource {
+        if let source, isPicaSource {
+            Button {
+                openAuthorSearch(author, source: source)
+            } label: {
+                label
+            }
+            .buttonStyle(.borderless)
+        } else if let source, source.supportsAuthorSearch {
             Button {
                 openAuthorSearch(author, source: source)
             } label: {
@@ -330,15 +355,11 @@ struct MangaDetailsHeaderView: View {
                         .foregroundStyle(.secondary)
                         .font(.caption)
 
-                    if row.label == "作者", let source {
-                        ForEach(PicaDetailMetadata.authorNames(in: value), id: \.self) { author in
-                            SelectableAuthorTextView(text: author) {
-                                openAuthorSearch(author, source: source)
-                            }
-                        }
-                    } else {
-                        SelectableTextView(text: value, font: .preferredFont(forTextStyle: .subheadline))
-                    }
+                    Text(value)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                        .foregroundStyle(.secondary)
+                        .font(.subheadline)
                 }
             }
         }

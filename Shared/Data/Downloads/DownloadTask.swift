@@ -466,7 +466,7 @@ extension DownloadTask {
                 try FileManager.default.moveItem(at: tmpDirectory, to: directory)
 
                 if UserDefaults.standard.bool(forKey: "Downloads.compress") {
-                    try FileManager.default.zipItem(at: directory, to: directory.appendingPathExtension("cbz"), shouldKeepParent: false)
+                    try await FileManager.default.zipItem(at: directory, to: directory.appendingPathExtension("cbz"), shouldKeepParent: false)
                     directory.removeItem()
                 }
 

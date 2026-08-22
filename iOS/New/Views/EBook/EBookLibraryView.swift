@@ -80,7 +80,7 @@ struct EBookLibraryView: View {
                 Button {
                     isImporting = true
                 } label: {
-                    Label(NSLocalizedString("IMPORT", comment: ""), systemImage: "square.and.arrow.down")
+                    Label(NSLocalizedString("EBOOK_IMPORT", comment: "Import e-books action"), systemImage: "square.and.arrow.down")
                         .fontWeight(.semibold)
                 }
                 .buttonStyle(.borderedProminent)

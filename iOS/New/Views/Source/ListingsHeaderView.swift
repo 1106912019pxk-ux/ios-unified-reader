@@ -12,6 +12,7 @@ struct ListingsHeaderView: View {
     let source: AidokuRunner.Source
     @Binding var listings: [AidokuRunner.Listing]
     @Binding var selectedListing: Int
+    var onFilterButtonClick: (() -> Void)? = nil
 
     @State private var error: Error?
     @State private var listingsLoaded: Bool = false
@@ -99,6 +100,30 @@ struct ListingsHeaderView: View {
                                                     : .secondarySystemFill
                                             )
                                         )
+                                )
+                        }
+                    }
+                }
+                if let onFilterButtonClick {
+                    Button {
+                        onFilterButtonClick()
+                    } label: {
+                        let label = HStack(spacing: 5) {
+                            Image(systemName: "line.3.horizontal.decrease")
+                            Text(NSLocalizedString("FILTERS"))
+                        }
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 8)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(Color.primary)
+
+                        if #available(iOS 26.0, *) {
+                            label.glassEffect(.regular)
+                        } else {
+                            label
+                                .background(
+                                    RoundedRectangle(cornerRadius: 100)
+                                        .fill(Color(uiColor: .secondarySystemFill))
                                 )
                         }
                     }

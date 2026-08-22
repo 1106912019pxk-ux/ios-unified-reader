@@ -650,7 +650,7 @@ private struct EBookContentsView: View {
     var body: some View {
         VStack(spacing: 0) {
             Picker(NSLocalizedString("EBOOK_SECTION", comment: "E-book contents picker label"), selection: $section) {
-                ForEach(Section.allCases, id: \.self) { Text($0.title).tag($0) }
+                ForEach(Pane.allCases, id: \.self) { Text($0.title).tag($0) }
             }
             .pickerStyle(.segmented)
             .padding()

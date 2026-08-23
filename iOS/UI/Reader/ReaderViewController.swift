@@ -98,7 +98,12 @@ class ReaderViewController: BaseObservingViewController {
     private lazy var speechController: ReaderSpeechController = {
         let controller = ReaderSpeechController()
         controller.onStateChange = { [weak self] state in
+            let navigationLocked: Bool = switch state {
+                case .loading, .playing, .paused: true
+                case .idle, .failed: false
+            }
             self?.speechButton.image = UIImage(systemName: state == .playing ? "headphones.circle.fill" : "headphones")
+            self?.setSpeechNavigationLocked(navigationLocked)
             self?.updateReaderActionButtons()
         }
         controller.revealSegment = { [weak self] segment in
@@ -713,10 +718,17 @@ class ReaderViewController: BaseObservingViewController {
     }
 
     @objc func sliderMoved(_ sender: ReaderSliderView) {
+        guard !speechController.isActive else { return }
         reader?.sliderMoved(value: sender.currentValue)
     }
     @objc func sliderStopped(_ sender: ReaderSliderView) {
+        guard !speechController.isActive else { return }
         reader?.sliderStopped(value: sender.currentValue)
+    }
+
+    private func setSpeechNavigationLocked(_ locked: Bool) {
+        (reader as? ReaderSpeechTextProviding)?.setSpeechNavigationLocked(locked)
+        toolbarView.sliderView.isEnabled = !locked
     }
 }
 
@@ -824,6 +836,7 @@ extension ReaderViewController {
             add(child: pageController, below: descriptionButtonController.view)
         }
         reader?.readingMode = readingMode
+        setSpeechNavigationLocked(speechController.isActive)
         updateReaderActionButtons()
         configureDictionaryOverlayInteractionMode()
         configureDictionaryOverlayTapHandler()
@@ -1252,6 +1265,10 @@ extension ReaderViewController {
 
     @objc func handleTap(_ gestureRecognizer: UITapGestureRecognizer) {
         let point = gestureRecognizer.location(in: view)
+        if speechController.isActive {
+            toggleBarVisibility()
+            return
+        }
         let overlayModeEnabled = AppSettings.dictionary.textOverlayMode.get()
         let singleTapLookupEnabled = isDictionarySingleTapLookupActiveForCurrentChapter
         let singleTapOCRLookupEnabled = singleTapLookupEnabled && !overlayModeEnabled
@@ -1409,6 +1426,7 @@ extension ReaderViewController: UIPencilInteractionDelegate {
     }
 
     private func nextPage() {
+        guard !speechController.isActive else { return }
         switch readingMode {
             case .rtl: reader?.moveLeft()
             default: reader?.moveRight()
@@ -1416,6 +1434,7 @@ extension ReaderViewController: UIPencilInteractionDelegate {
     }
 
     private func previousPage() {
+        guard !speechController.isActive else { return }
         switch readingMode {
             case .rtl: reader?.moveRight()
             default: reader?.moveLeft()
@@ -1636,10 +1655,12 @@ extension ReaderViewController {
     }
 
     @objc func moveLeft() {
+        guard !speechController.isActive else { return }
         reader?.moveLeft()
     }
 
     @objc func moveRight() {
+        guard !speechController.isActive else { return }
         reader?.moveRight()
     }
 

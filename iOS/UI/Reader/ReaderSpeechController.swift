@@ -24,6 +24,7 @@ struct ReaderSpeechSegment: Identifiable, Sendable {
 protocol ReaderSpeechTextProviding: AnyObject {
     func speechSegmentsFromCurrentPosition() -> [ReaderSpeechSegment]
     func revealSpeechSegment(_ segment: ReaderSpeechSegment)
+    func setSpeechNavigationLocked(_ locked: Bool)
 }
 
 enum ReaderSpeechTextExtractor {
@@ -196,6 +197,8 @@ final class ReaderSpeechController: NSObject, ObservableObject {
     private var unitIndex = 0
     private var player: AVAudioPlayer?
     private var synthesisTask: Task<Void, Never>?
+    private var prefetchTask: Task<Void, Never>?
+    private var prefetchedAudio: [Int: Data] = [:]
     private var audioCache: [String: Data] = [:]
 
     var isActive: Bool {
@@ -270,9 +273,12 @@ final class ReaderSpeechController: NSObject, ObservableObject {
     func stop() {
         synthesisTask?.cancel()
         synthesisTask = nil
+        prefetchTask?.cancel()
+        prefetchTask = nil
         player?.stop()
         player = nil
         units = []
+        prefetchedAudio = [:]
         unitIndex = 0
         progressText = ""
         state = .idle
@@ -286,7 +292,10 @@ final class ReaderSpeechController: NSObject, ObservableObject {
         }
 
         let unit = units[unitIndex]
-        if unitIndex == 0 || units[unitIndex - 1].segment.id != unit.segment.id {
+        // The reader is already showing the position used to create the first
+        // speech segment. Revealing it again can move a scrolling text page back
+        // to the beginning, so only follow the reader after playback advances.
+        if unitIndex > 0, units[unitIndex - 1].segment.id != unit.segment.id {
             revealSegment?(unit.segment)
         }
         progressText = String(
@@ -313,15 +322,20 @@ final class ReaderSpeechController: NSObject, ObservableObject {
             guard let self else { return }
             do {
                 let data: Data
-                if let cached = audioCache[cacheKey] {
+                if let prefetched = prefetchedAudio.removeValue(forKey: unitIndex) {
+                    data = prefetched
+                } else if let cached = audioCache[cacheKey] {
                     data = cached
                 } else {
+                    prefetchTask?.cancel()
+                    prefetchTask = nil
                     data = try await engine.synthesize(.init(text: unit.text, rate: rate, speaker: speaker))
                     guard !Task.isCancelled else { return }
                     audioCache[cacheKey] = data
                 }
                 guard !Task.isCancelled else { return }
                 try beginPlayback(data: data)
+                prefetchNextUnit(after: unitIndex, settings: settings)
             } catch is CancellationError {
                 return
             } catch {
@@ -382,6 +396,38 @@ final class ReaderSpeechController: NSObject, ObservableObject {
         progressText = readerSpeechLocalized("MICROSOFT_TTS_CHAPTER_FINISHED", fallback: "本章朗读完成")
         state = .idle
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    private func prefetchNextUnit(after currentIndex: Int, settings: ReaderSpeechSettingsStore) {
+        let nextIndex = currentIndex + 1
+        guard units.indices.contains(nextIndex), prefetchedAudio[nextIndex] == nil else { return }
+        let unit = units[nextIndex]
+        let rate = settings.rate
+        let speaker = settings.speaker
+        guard let engine = try? settings.makeEngine() else { return }
+        let cacheKey = "\(engine.cacheIdentifier)|\(speaker)|\(rate)|\(unit.text)"
+
+        prefetchTask?.cancel()
+        prefetchTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let data: Data
+                if let cached = audioCache[cacheKey] {
+                    data = cached
+                } else {
+                    data = try await engine.synthesize(.init(text: unit.text, rate: rate, speaker: speaker))
+                    guard !Task.isCancelled else { return }
+                    audioCache[cacheKey] = data
+                }
+                guard !Task.isCancelled, units.indices.contains(nextIndex), units[nextIndex].text == unit.text else {
+                    return
+                }
+                prefetchedAudio[nextIndex] = data
+            } catch {
+                // Prefetch is an optimization only. Normal playback will retry
+                // synthesis and surface an error if it also fails.
+            }
+        }
     }
 
     private static func chunks(from markdown: String, limit: Int = 420) -> [String] {

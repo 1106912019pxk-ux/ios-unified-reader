@@ -671,7 +671,8 @@ class ReaderViewController: BaseObservingViewController {
                 mangaId: manga.key,
                 chapterId: candidate.key
             )
-            let segments = pages.enumerated().compactMap { pageIndex, page in
+            let segments: [ReaderSpeechSegment] = pages.enumerated().compactMap {
+                (pageIndex: Int, page: AidokuRunner.Page) -> ReaderSpeechSegment? in
                 guard let text = ReaderSpeechTextExtractor.text(from: page) else { return nil }
                 return ReaderSpeechSegment(
                     id: "\(candidate.key)|\(pageIndex)",

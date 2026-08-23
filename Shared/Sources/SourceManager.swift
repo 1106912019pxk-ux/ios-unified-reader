@@ -205,7 +205,7 @@ extension SourceManager {
             }
         }
         do {
-            try await FileManager.default.unzipItem(at: fileUrl, to: temporaryDirectory)
+            try FileManager.default.unzipItem(at: fileUrl, to: temporaryDirectory)
         } catch {
             LogManager.logger.error("Failed to unarchive source package: \(error)")
             return nil

@@ -178,9 +178,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
                 "Reader.textReaderStyle": "scroll",
                 "Reader.textFontFamily": "System",
+                "Reader.textBackgroundColor": "system",
                 "Reader.textFontSize": 18,
                 "Reader.textLineSpacing": 8,
                 "Reader.textHorizontalPadding": 24,
+                "Reader.textTopPadding": 32,
+                "Reader.textBottomPadding": 32,
+                "Reader.textParagraphSpacing": 12,
+                "Reader.textFirstLineIndent": 0,
 
                 "Tracking.updateAfterReading": true,
                 "Tracking.autoSyncFromTracker": false,
@@ -208,6 +213,19 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             ]
         )
         AppSettings.registerDefaults()
+        // Re-register fonts from previous in-place installs before any reader is opened.
+        let textReaderFontStore = TextReaderFontStore.shared
+        textReaderFontStore.refresh()
+        // The removed Readium prototype stored its global font under this key.
+        // Preserve that choice when the app is installed over an existing build.
+        if
+            UserDefaults.standard.string(forKey: "Reader.textFontFamily") == "System",
+            let legacyFamily = UserDefaults.standard.string(forKey: "EBook.defaultFontFamily"),
+            !legacyFamily.isEmpty,
+            let identifier = textReaderFontStore.identifier(forLegacyFamily: legacyFamily)
+        {
+            UserDefaults.standard.set(identifier, forKey: "Reader.textFontFamily")
+        }
 
         // PlayCover fix: eagerly initialize the Core Data stack on the main thread
         // before any background migration task touches it. The `lazy var container`

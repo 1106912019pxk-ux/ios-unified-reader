@@ -1149,10 +1149,13 @@ extension LibraryViewController {
             } else {
                 []
             }
-            var filterChildren: [UIMenuElement] = []
-            for method in LibraryFilter.FilterMethod.allCases where method.isAvailable {
-                filterChildren.append(
-                    UIAction(
+            let filters = UIMenu(
+                title: NSLocalizedString("BUTTON_FILTER"),
+                subtitle: self.filtersSubtitle(),
+                image: UIImage(systemName: "line.3.horizontal.decrease"),
+                children: LibraryFilter.FilterMethod.allCases.compactMap { method in
+                    guard method.isAvailable else { return nil }
+                    return UIAction(
                         title: method.title,
                         image: method.image,
                         attributes: attributes,
@@ -1160,65 +1163,47 @@ extension LibraryViewController {
                     ) { [weak self] _ in
                         self?.toggleFilter(method: method)
                     }
-                )
-            }
-
-            let contentRatingActions: [UIMenuElement] = MangaContentRating.allCases.map { rating in
-                UIAction(
-                    title: rating.title,
-                    attributes: attributes,
-                    state: self.filterState(for: .contentRating, value: rating.stringValue)
-                ) { [weak self] _ in
-                    self?.toggleFilter(method: .contentRating, value: rating.stringValue)
-                }
-            }
-            filterChildren.append(
-                UIMenu(
-                    title: LibraryFilter.FilterMethod.contentRating.title,
-                    image: LibraryFilter.FilterMethod.contentRating.image,
-                    children: contentRatingActions
-                )
-            )
-
-            let sourceActions: [UIMenuElement] = self.viewModel.sourceKeys.map { key in
-                UIAction(
-                    title: SourceManager.shared.source(for: key)?.name ?? key,
-                    attributes: attributes,
-                    state: self.filterState(for: .source, value: key)
-                ) { [weak self] _ in
-                    self?.toggleFilter(method: .source, value: key)
-                }
-            }
-            filterChildren.append(
-                UIMenu(
-                    title: LibraryFilter.FilterMethod.source.title,
-                    image: LibraryFilter.FilterMethod.source.image,
-                    children: sourceActions
-                )
-            )
-
-            let categoryActions: [UIMenuElement] = self.viewModel.categories.map { category in
-                UIAction(
-                    title: category,
-                    attributes: attributes,
-                    state: self.filterState(for: .category, value: category)
-                ) { [weak self] _ in
-                    self?.toggleFilter(method: .category, value: category)
-                }
-            }
-            filterChildren.append(
-                UIMenu(
-                    title: LibraryFilter.FilterMethod.category.title,
-                    image: LibraryFilter.FilterMethod.category.image,
-                    children: categoryActions
-                )
-            )
-
-            let filters = UIMenu(
-                title: NSLocalizedString("BUTTON_FILTER"),
-                subtitle: self.filtersSubtitle(),
-                image: UIImage(systemName: "line.3.horizontal.decrease"),
-                children: filterChildren
+                } + [
+                    UIMenu(
+                        title: LibraryFilter.FilterMethod.contentRating.title,
+                        image: LibraryFilter.FilterMethod.contentRating.image,
+                        children: MangaContentRating.allCases.map { rating in
+                            UIAction(
+                                title: rating.title,
+                                attributes: attributes,
+                                state: self.filterState(for: .contentRating, value: rating.stringValue)
+                            ) { [weak self] _ in
+                                self?.toggleFilter(method: .contentRating, value: rating.stringValue)
+                            }
+                        }
+                    ),
+                    UIMenu(
+                        title: LibraryFilter.FilterMethod.source.title,
+                        image: LibraryFilter.FilterMethod.source.image,
+                        children: self.viewModel.sourceKeys.map { key in
+                            UIAction(
+                                title: SourceManager.shared.source(for: key)?.name ?? key,
+                                attributes: attributes,
+                                state: self.filterState(for: .source, value: key)
+                            ) { [weak self] _ in
+                                self?.toggleFilter(method: .source, value: key)
+                            }
+                        }
+                    ),
+                    UIMenu(
+                        title: LibraryFilter.FilterMethod.category.title,
+                        image: LibraryFilter.FilterMethod.category.image,
+                        children: self.viewModel.categories.map { category in
+                            UIAction(
+                                title: category,
+                                attributes: attributes,
+                                state: self.filterState(for: .category, value: category)
+                            ) { [weak self] _ in
+                                self?.toggleFilter(method: .category, value: category)
+                            }
+                        }
+                    )
+                ]
             )
             if self.viewModel.filters.isEmpty {
                 completion([filters])

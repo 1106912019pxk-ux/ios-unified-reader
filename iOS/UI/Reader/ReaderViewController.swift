@@ -46,6 +46,8 @@ class ReaderViewController: BaseObservingViewController {
     private var sessionReadPages: Set<Int> = []
     private var sessionStartDate: Date?
     private var sessionLastInteraction: Date?
+    private var speechInitiatedChapterChange = false
+    private var pendingSpeechSegment: ReaderSpeechSegment?
 
     weak var reader: ReaderReaderDelegate?
 
@@ -70,6 +72,43 @@ class ReaderViewController: BaseObservingViewController {
     private lazy var activityIndicator = UIActivityIndicatorView(style: .medium)
     private lazy var toolbarView = ReaderToolbarView()
     private var toolbarViewWidthConstraint: NSLayoutConstraint?
+
+    private lazy var webButton: UIBarButtonItem = {
+        let item = UIBarButtonItem(
+            image: UIImage(systemName: "safari"),
+            style: .plain,
+            target: self,
+            action: #selector(openWebView)
+        )
+        item.isEnabled = chapter.url != nil
+        return item
+    }()
+    private lazy var readerSettingsButton = UIBarButtonItem(
+        image: UIImage(systemName: "textformat.size"),
+        style: .plain,
+        target: self,
+        action: #selector(openReaderSettings)
+    )
+    private lazy var speechButton = UIBarButtonItem(
+        image: UIImage(systemName: "headphones"),
+        style: .plain,
+        target: self,
+        action: #selector(openReaderSpeech)
+    )
+    private lazy var speechController: ReaderSpeechController = {
+        let controller = ReaderSpeechController()
+        controller.onStateChange = { [weak self] state in
+            self?.speechButton.image = UIImage(systemName: state == .playing ? "headphones.circle.fill" : "headphones")
+            self?.updateReaderActionButtons()
+        }
+        controller.revealSegment = { [weak self] segment in
+            self?.revealSpeechSegment(segment)
+        }
+        controller.loadMoreSegments = { [weak self] chapterKey in
+            await self?.nextEpubSpeechSegments(after: chapterKey) ?? []
+        }
+        return controller
+    }()
 
     private var squeezeTimer: Timer?
     private var longSqueezeTimer: Timer?
@@ -154,22 +193,7 @@ class ReaderViewController: BaseObservingViewController {
                 action: #selector(openChapterList)
             )
         ]
-        let moreButton = UIBarButtonItem(
-            image: UIImage(systemName: "safari"),
-            style: .plain,
-            target: self,
-            action: #selector(openWebView)
-        )
-        moreButton.isEnabled = chapter.url != nil
-        navigationItem.rightBarButtonItems = [
-            moreButton,
-            UIBarButtonItem(
-                image: UIImage(systemName: "textformat.size"),
-                style: .plain,
-                target: self,
-                action: #selector(openReaderSettings)
-            )
-        ]
+        updateReaderActionButtons()
 
         // fix navbar being clear
         let navigationBarAppearance = UINavigationBarAppearance()
@@ -568,6 +592,23 @@ class ReaderViewController: BaseObservingViewController {
         present(vc, animated: true)
     }
 
+    @objc func openReaderSpeech() {
+        guard reader is ReaderSpeechTextProviding || isLocalEpubChapter else { return }
+        let vc = UIHostingController(
+            rootView: ReaderSpeechControlView(
+                controller: speechController,
+                segments: { [weak self] in
+                    await self?.speechSegmentsFromCurrentPosition() ?? []
+                }
+            )
+        )
+        if let sheet = vc.sheetPresentationController {
+            sheet.detents = [.medium(), .large()]
+            sheet.prefersGrabberVisible = true
+        }
+        present(vc, animated: true)
+    }
+
     @objc func openWebView() {
         guard let url = chapter.url, url.scheme == "http" || url.scheme == "https" else { return }
         present(SFSafariViewController(url: url), animated: true)
@@ -590,7 +631,81 @@ class ReaderViewController: BaseObservingViewController {
     }
 
     @objc func close() {
+        speechController.stop()
         dismiss(animated: true)
+    }
+
+    private func updateReaderActionButtons() {
+        webButton.isEnabled = chapter.url != nil
+        if reader is ReaderSpeechTextProviding || isLocalEpubChapter || speechController.isActive {
+            navigationItem.rightBarButtonItems = [webButton, speechButton, readerSettingsButton]
+        } else {
+            navigationItem.rightBarButtonItems = [webButton, readerSettingsButton]
+        }
+    }
+
+    private var isLocalEpubChapter: Bool {
+        manga.sourceKey == LocalSourceRunner.sourceKey
+            && chapter.key.lowercased().contains(".epub/")
+    }
+
+    private func speechSegmentsFromCurrentPosition() async -> [ReaderSpeechSegment] {
+        let currentSegments = (reader as? ReaderSpeechTextProviding)?.speechSegmentsFromCurrentPosition() ?? []
+        if !currentSegments.isEmpty || !isLocalEpubChapter {
+            return currentSegments
+        }
+        return await nextEpubSpeechSegments(after: nil)
+    }
+
+    private func nextEpubSpeechSegments(after chapterKey: String?) async -> [ReaderSpeechSegment] {
+        guard manga.sourceKey == LocalSourceRunner.sourceKey else { return [] }
+        let anchorKey = chapterKey ?? chapter.key
+        guard let anchorIndex = chapterList.firstIndex(where: { $0.key == anchorKey }) else { return [] }
+        let startIndex = chapterKey == nil ? anchorIndex : anchorIndex - 1
+        guard startIndex >= 0 else { return [] }
+
+        for index in stride(from: startIndex, through: 0, by: -1) {
+            let candidate = chapterList[index]
+            guard candidate.key.lowercased().contains(".epub/") else { break }
+            let pages = await LocalFileManager.shared.fetchPages(
+                mangaId: manga.key,
+                chapterId: candidate.key
+            )
+            let segments = pages.enumerated().compactMap { pageIndex, page in
+                guard let text = ReaderSpeechTextExtractor.text(from: page) else { return nil }
+                return ReaderSpeechSegment(
+                    id: "\(candidate.key)|\(pageIndex)",
+                    chapterKey: candidate.key,
+                    pageIndex: pageIndex,
+                    text: text
+                )
+            }
+            if !segments.isEmpty { return segments }
+        }
+        return []
+    }
+
+    private func revealSpeechSegment(_ segment: ReaderSpeechSegment) {
+        if segment.chapterKey == chapter.key {
+            (reader as? ReaderSpeechTextProviding)?.revealSpeechSegment(segment)
+            return
+        }
+        guard let target = chapterList.first(where: { $0.key == segment.chapterKey }) else { return }
+        pendingSpeechSegment = segment
+        speechInitiatedChapterChange = true
+        setChapter(target)
+        loadCurrentChapter()
+        speechInitiatedChapterChange = false
+    }
+
+    private func revealPendingSpeechSegmentIfPossible() {
+        guard
+            let segment = pendingSpeechSegment,
+            segment.chapterKey == chapter.key,
+            let provider = reader as? ReaderSpeechTextProviding
+        else { return }
+        pendingSpeechSegment = nil
+        provider.revealSpeechSegment(segment)
     }
 
     @objc func sliderMoved(_ sender: ReaderSliderView) {
@@ -696,12 +811,16 @@ extension ReaderViewController {
                 }
         }
         if let pageController {
+            if type != .text && !speechInitiatedChapterChange {
+                speechController.stop()
+            }
             reader?.remove()
             pageController.delegate = self
             reader = pageController
             add(child: pageController, below: descriptionButtonController.view)
         }
         reader?.readingMode = readingMode
+        updateReaderActionButtons()
         configureDictionaryOverlayInteractionMode()
         configureDictionaryOverlayTapHandler()
         disableSwipeGestures()
@@ -818,6 +937,10 @@ extension ReaderViewController: ReaderHoldingDelegate {
     func setChapter(_ chapter: AidokuRunner.Chapter) {
         guard chapter != self.chapter else { return }
 
+        if speechController.isActive && !speechInitiatedChapterChange {
+            speechController.stop()
+        }
+
         // store current history data since it will change when new chapter loads
         let currentPage = currentPage
         let totalPages = toolbarView.totalPages
@@ -835,6 +958,7 @@ extension ReaderViewController: ReaderHoldingDelegate {
         configureDictionaryLookupGesture()
         configureDictionaryOverlayInteractionMode()
         loadNavbarTitle()
+        updateReaderActionButtons()
     }
 
     func setCurrentPage(_ page: Int, position: Double? = nil) {
@@ -861,6 +985,7 @@ extension ReaderViewController: ReaderHoldingDelegate {
         currentPosition = position
         toolbarView.currentPage = page
         toolbarView.updateSliderPosition()
+        revealPendingSpeechSegmentIfPossible()
         // Mark as completed when reaching the last page
         // Exception: Don't mark for the pre-pagination placeholder (single text page before
         // ReaderPagedTextViewController has paginated it). Once paginated, even single-page

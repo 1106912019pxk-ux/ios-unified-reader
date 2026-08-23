@@ -7,15 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		EBA000212026082200000001 /* EBookModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBA000112026082200000001 /* EBookModels.swift */; };
-		EBA000222026082200000001 /* EBookLibraryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBA000122026082200000001 /* EBookLibraryStore.swift */; };
-		EBA000232026082200000001 /* EBookLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBA000132026082200000001 /* EBookLibraryView.swift */; };
-		EBA000242026082200000001 /* EBookReadiumService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBA000142026082200000001 /* EBookReadiumService.swift */; };
-		EBA000252026082200000001 /* EBookFontStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBA000152026082200000001 /* EBookFontStore.swift */; };
-		EBA000262026082200000001 /* EBookReaderViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBA000162026082200000001 /* EBookReaderViewController.swift */; };
-		EBA000352026082200000001 /* ReadiumShared in Frameworks */ = {isa = PBXBuildFile; productRef = EBA000322026082200000001 /* ReadiumShared */; };
-		EBA000362026082200000001 /* ReadiumStreamer in Frameworks */ = {isa = PBXBuildFile; productRef = EBA000332026082200000001 /* ReadiumStreamer */; };
-		EBA000372026082200000001 /* ReadiumNavigator in Frameworks */ = {isa = PBXBuildFile; productRef = EBA000342026082200000001 /* ReadiumNavigator */; };
+		7A23000130A0000100C0D3E0 /* ReaderSpeechController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A23000230A0000100C0D3E0 /* ReaderSpeechController.swift */; };
+		7A23000330A0000100C0D3E0 /* ReaderSpeechEngines.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A23000430A0000100C0D3E0 /* ReaderSpeechEngines.swift */; };
+		7A23001030A0000200C0D3E0 /* sherpa-onnx in Frameworks */ = {isa = PBXBuildFile; productRef = 7A23001230A0000200C0D3E0 /* sherpa-onnx */; };
 		002C0AC12EC0F44D0071CE82 /* LAPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002C0AC02EC0F44D0071CE82 /* LAPolicy.swift */; };
 		002C0AC22EC0F44D0071CE82 /* LAPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002C0AC02EC0F44D0071CE82 /* LAPolicy.swift */; };
 		00A1B2C42EA7F1000012AB01 /* Archive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00A1B2C32EA7F1000012AB01 /* Archive.swift */; };
@@ -690,12 +684,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		EBA000112026082200000001 /* EBookModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EBookModels.swift; sourceTree = "<group>"; };
-		EBA000122026082200000001 /* EBookLibraryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EBookLibraryStore.swift; sourceTree = "<group>"; };
-		EBA000132026082200000001 /* EBookLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EBookLibraryView.swift; sourceTree = "<group>"; };
-		EBA000142026082200000001 /* EBookReadiumService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EBookReadiumService.swift; sourceTree = "<group>"; };
-		EBA000152026082200000001 /* EBookFontStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EBookFontStore.swift; sourceTree = "<group>"; };
-		EBA000162026082200000001 /* EBookReaderViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EBookReaderViewController.swift; sourceTree = "<group>"; };
+		7A23000230A0000100C0D3E0 /* ReaderSpeechController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSpeechController.swift; sourceTree = "<group>"; };
+		7A23000430A0000100C0D3E0 /* ReaderSpeechEngines.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSpeechEngines.swift; sourceTree = "<group>"; };
 		002C0AC02EC0F44D0071CE82 /* LAPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LAPolicy.swift; sourceTree = "<group>"; };
 		00A1B2C32EA7F1000012AB01 /* Archive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Archive.swift; sourceTree = "<group>"; };
 		04B48CF72CD6835D00F719D0 /* ShikimoriTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShikimoriTracker.swift; sourceTree = "<group>"; };
@@ -1229,9 +1219,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				EBA000352026082200000001 /* ReadiumShared in Frameworks */,
-				EBA000362026082200000001 /* ReadiumStreamer in Frameworks */,
-				EBA000372026082200000001 /* ReadiumNavigator in Frameworks */,
+				7A23001030A0000200C0D3E0 /* sherpa-onnx in Frameworks */,
 				FB17114B296770CC00AD523D /* NukeUI in Frameworks */,
 				FB662EDE2DA816CF00007514 /* MarkdownUI in Frameworks */,
 				FB3737D12D17458400AB1551 /* AidokuRunner in Frameworks */,
@@ -1460,6 +1448,8 @@
 				FB55AFAA28AABD8D0083EFC3 /* Page */,
 				FB55AFA128AAAEBD0083EFC3 /* Readers */,
 				FB0CAA6928A9BB9C0024561A /* ReaderViewController.swift */,
+				7A23000230A0000100C0D3E0 /* ReaderSpeechController.swift */,
+				7A23000430A0000100C0D3E0 /* ReaderSpeechEngines.swift */,
 				FB2BE5E029522EE700FAD8A7 /* ReaderChapterListView.swift */,
 				FB1F553128AFC9FD00CFE182 /* ReadingMode.swift */,
 				FBC1271C28ABDCB400B68FFC /* ReaderHoldingDelegate.swift */,
@@ -2046,7 +2036,6 @@
 		FB662EB72DA813E300007514 /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				EBA000102026082200000001 /* EBook */,
 				FB662E982DA813E300007514 /* Common */,
 				FB90E8B22EAD174D00A8ACF3 /* Library */,
 				FB662E8F2DA813E300007514 /* Browse */,
@@ -2060,19 +2049,6 @@
 				FB0051202FAF01ED004B4A6F /* Migration */,
 			);
 			path = Views;
-			sourceTree = "<group>";
-		};
-		EBA000102026082200000001 /* EBook */ = {
-			isa = PBXGroup;
-			children = (
-				EBA000112026082200000001 /* EBookModels.swift */,
-				EBA000122026082200000001 /* EBookLibraryStore.swift */,
-				EBA000132026082200000001 /* EBookLibraryView.swift */,
-				EBA000142026082200000001 /* EBookReadiumService.swift */,
-				EBA000152026082200000001 /* EBookFontStore.swift */,
-				EBA000162026082200000001 /* EBookReaderViewController.swift */,
-			);
-			path = EBook;
 			sourceTree = "<group>";
 		};
 		FB662EFC2DA81B8200007514 /* Extensions */ = {
@@ -2658,9 +2634,7 @@
 			);
 			name = "Aidoku (iOS)";
 			packageProductDependencies = (
-				EBA000322026082200000001 /* ReadiumShared */,
-				EBA000332026082200000001 /* ReadiumStreamer */,
-				EBA000342026082200000001 /* ReadiumNavigator */,
+				7A23001230A0000200C0D3E0 /* sherpa-onnx */,
 				FB7B7ED7278CE949001E6EAF /* ZIPFoundation */,
 				FB17114A296770CC00AD523D /* NukeUI */,
 				FBE53F0B29CC015E00899601 /* AsyncDisplayKit */,
@@ -2796,7 +2770,7 @@
 			);
 			mainGroup = FB1B4825277CE18D0056D02C;
 			packageReferences = (
-				EBA000312026082200000001 /* XCRemoteSwiftPackageReference "ReadiumSwiftToolkit" */,
+				7A23001130A0000200C0D3E0 /* XCRemoteSwiftPackageReference "sherpa-onnx" */,
 				FB7B7ED6278CE949001E6EAF /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
 				FB171149296770CC00AD523D /* XCRemoteSwiftPackageReference "Nuke" */,
 				FBE53F0A29CC015E00899601 /* XCRemoteSwiftPackageReference "Texture" */,
@@ -2877,12 +2851,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				EBA000212026082200000001 /* EBookModels.swift in Sources */,
-				EBA000222026082200000001 /* EBookLibraryStore.swift in Sources */,
-				EBA000232026082200000001 /* EBookLibraryView.swift in Sources */,
-				EBA000242026082200000001 /* EBookReadiumService.swift in Sources */,
-				EBA000252026082200000001 /* EBookFontStore.swift in Sources */,
-				EBA000262026082200000001 /* EBookReaderViewController.swift in Sources */,
+				7A23000130A0000100C0D3E0 /* ReaderSpeechController.swift in Sources */,
+				7A23000330A0000100C0D3E0 /* ReaderSpeechEngines.swift in Sources */,
 				FB4B0AEE285D2EE30066A13B /* MyAnimeListModels.swift in Sources */,
 				FB8E48D52DBFCEFB002A3621 /* SourceHomeContentView.swift in Sources */,
 				FBF9259D2F4DFB810049CB43 /* MangaBakaModels.swift in Sources */,
@@ -3758,7 +3728,7 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_UISupportsDocumentBrowser = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -3802,7 +3772,7 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_UISupportsDocumentBrowser = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -3993,12 +3963,12 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		EBA000312026082200000001 /* XCRemoteSwiftPackageReference "ReadiumSwiftToolkit" */ = {
+		7A23001130A0000200C0D3E0 /* XCRemoteSwiftPackageReference "sherpa-onnx" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/readium/swift-toolkit.git";
+			repositoryURL = "https://github.com/k2-fsa/sherpa-onnx";
 			requirement = {
 				kind = exactVersion;
-				version = 3.8.0;
+				version = 1.13.6;
 			};
 		};
 		EE7A41EF2F5D20000044AF4C /* XCRemoteSwiftPackageReference "hoshidicts" */ = {
@@ -4035,10 +4005,10 @@
 		};
 		FB7B7ED6278CE949001E6EAF /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/1106912019pxk-ux/ReadiumZIPFoundation.git";
+			repositoryURL = "https://github.com/weichsel/ZIPFoundation.git";
 			requirement = {
-				kind = revision;
-				revision = 22787ffb59de99e5dc1fbfe80b19c97a904ad48d;
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.9.9;
 			};
 		};
 		FBAED40A2E3A762800B81E74 /* XCRemoteSwiftPackageReference "swiftui-introspect" */ = {
@@ -4076,20 +4046,10 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		EBA000322026082200000001 /* ReadiumShared */ = {
+		7A23001230A0000200C0D3E0 /* sherpa-onnx */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = EBA000312026082200000001 /* XCRemoteSwiftPackageReference "ReadiumSwiftToolkit" */;
-			productName = ReadiumShared;
-		};
-		EBA000332026082200000001 /* ReadiumStreamer */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = EBA000312026082200000001 /* XCRemoteSwiftPackageReference "ReadiumSwiftToolkit" */;
-			productName = ReadiumStreamer;
-		};
-		EBA000342026082200000001 /* ReadiumNavigator */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = EBA000312026082200000001 /* XCRemoteSwiftPackageReference "ReadiumSwiftToolkit" */;
-			productName = ReadiumNavigator;
+			package = 7A23001130A0000200C0D3E0 /* XCRemoteSwiftPackageReference "sherpa-onnx" */;
+			productName = "sherpa-onnx";
 		};
 		EE7A41CA2F5CF7710044AF4C /* CHoshiDicts */ = {
 			isa = XCSwiftPackageProductDependency;

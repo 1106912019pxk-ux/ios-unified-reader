@@ -28,7 +28,10 @@ struct PaginationConfig {
     var lineSpacing: CGFloat = 6
     var paragraphSpacing: CGFloat = 12
     var horizontalPadding: CGFloat = 24
-    var verticalPadding: CGFloat = 32
+    var topPadding: CGFloat = 32
+    var bottomPadding: CGFloat = 32
+    var firstLineIndent: CGFloat = 0
+    var theme: TextReaderTheme = .current
 
     var font: UIFont {
         if fontName == "San Francisco" || fontName == "System" {
@@ -41,6 +44,7 @@ struct PaginationConfig {
         let style = NSMutableParagraphStyle()
         style.lineSpacing = lineSpacing
         style.paragraphSpacing = paragraphSpacing
+        style.firstLineHeadIndent = firstLineIndent * fontSize
         return style
     }
 
@@ -48,7 +52,7 @@ struct PaginationConfig {
         [
             .font: font,
             .paragraphStyle: paragraphStyle,
-            .foregroundColor: UIColor.label
+            .foregroundColor: theme.foregroundColor
         ]
     }
 }
@@ -74,7 +78,7 @@ class TextPaginator {
     func contentSize(for pageSize: CGSize) -> CGSize {
         CGSize(
             width: pageSize.width - (config.horizontalPadding * 2),
-            height: pageSize.height - (config.verticalPadding * 2)
+            height: pageSize.height - config.topPadding - config.bottomPadding
         )
     }
 
@@ -278,7 +282,7 @@ class TextPaginator {
         style.paragraphSpacing = config.paragraphSpacing
 
         attrs[.paragraphStyle] = style
-        attrs[.foregroundColor] = UIColor.secondaryLabel
+        attrs[.foregroundColor] = config.theme.secondaryForegroundColor
     }
 
     /// Merge code block attributes (monospace font, indentation).
@@ -293,7 +297,7 @@ class TextPaginator {
 
         attrs[.font] = monoFont
         attrs[.paragraphStyle] = style
-        attrs[.foregroundColor] = UIColor.secondaryLabel
+        attrs[.foregroundColor] = config.theme.secondaryForegroundColor
     }
 
     // MARK: - Inline Styling

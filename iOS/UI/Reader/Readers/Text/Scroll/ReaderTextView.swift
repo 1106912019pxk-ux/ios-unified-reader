@@ -16,6 +16,11 @@ struct ReaderTextView: View {
    let fontSize: Double
    let lineSpacing: Double
    let horizontalPadding: Double
+   let topPadding: Double
+   let bottomPadding: Double
+   let paragraphSpacing: Double
+   let firstLineIndent: Double
+   let theme: TextReaderTheme
 
    init(
        source: AidokuRunner.Source?,
@@ -23,13 +28,23 @@ struct ReaderTextView: View {
        fontFamily: String,
        fontSize: Double,
        lineSpacing: Double,
-       horizontalPadding: Double
+       horizontalPadding: Double,
+       topPadding: Double,
+       bottomPadding: Double,
+       paragraphSpacing: Double,
+       firstLineIndent: Double,
+       theme: TextReaderTheme
    ) {
        self.source = source
        self.fontFamily = fontFamily
        self.fontSize = fontSize
        self.lineSpacing = lineSpacing
        self.horizontalPadding = horizontalPadding
+       self.topPadding = topPadding
+       self.bottomPadding = bottomPadding
+       self.paragraphSpacing = paragraphSpacing
+       self.firstLineIndent = firstLineIndent
+       self.theme = theme
 
        func loadText(page: Page) -> String? {
            if let text = page.text {
@@ -68,7 +83,12 @@ struct ReaderTextView: View {
                fontFamily: fontFamily,
                fontSize: fontSize,
                lineSpacing: lineSpacing,
-               horizontalPadding: horizontalPadding
+               horizontalPadding: horizontalPadding,
+               topPadding: topPadding,
+               bottomPadding: bottomPadding,
+               paragraphSpacing: paragraphSpacing,
+               firstLineIndent: firstLineIndent,
+               theme: theme
            )
            .frame(maxWidth: .infinity, alignment: .leading)
            .ignoresSafeArea()

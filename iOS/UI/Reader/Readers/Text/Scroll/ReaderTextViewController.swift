@@ -76,7 +76,7 @@ class ReaderTextViewController: BaseViewController {
 
     private lazy var scrollView: UIScrollView = {
         let scrollView = UIScrollView()
-        scrollView.backgroundColor = .systemBackground
+        scrollView.backgroundColor = TextReaderTheme.current.backgroundColor
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.delegate = self
         scrollView.alwaysBounceVertical = true
@@ -108,13 +108,28 @@ class ReaderTextViewController: BaseViewController {
     private var currentHorizontalPadding: Double {
         UserDefaults.standard.object(forKey: "Reader.textHorizontalPadding") as? Double ?? 24
     }
+    private var currentTopPadding: Double {
+        UserDefaults.standard.object(forKey: "Reader.textTopPadding") as? Double ?? 32
+    }
+    private var currentBottomPadding: Double {
+        UserDefaults.standard.object(forKey: "Reader.textBottomPadding") as? Double ?? 32
+    }
+    private var currentParagraphSpacing: Double {
+        UserDefaults.standard.object(forKey: "Reader.textParagraphSpacing") as? Double ?? 12
+    }
+    private var currentFirstLineIndent: Double {
+        UserDefaults.standard.object(forKey: "Reader.textFirstLineIndent") as? Double ?? 0
+    }
 
     private func createHostingController(page: Page?) -> UIHostingController<ReaderTextView> {
         let hc = HostingController(
             rootView: ReaderTextView(
                 source: viewModel.source, page: page,
                 fontFamily: currentFontFamily, fontSize: currentFontSize,
-                lineSpacing: currentLineSpacing, horizontalPadding: currentHorizontalPadding
+                lineSpacing: currentLineSpacing, horizontalPadding: currentHorizontalPadding,
+                topPadding: currentTopPadding, bottomPadding: currentBottomPadding,
+                paragraphSpacing: currentParagraphSpacing, firstLineIndent: currentFirstLineIndent,
+                theme: .current
             )
         )
         if #available(iOS 16.0, *) {
@@ -177,7 +192,10 @@ class ReaderTextViewController: BaseViewController {
                 hc.rootView = ReaderTextView(
                     source: viewModel.source, page: page,
                     fontFamily: currentFontFamily, fontSize: currentFontSize,
-                    lineSpacing: currentLineSpacing, horizontalPadding: currentHorizontalPadding
+                    lineSpacing: currentLineSpacing, horizontalPadding: currentHorizontalPadding,
+                    topPadding: currentTopPadding, bottomPadding: currentBottomPadding,
+                    paragraphSpacing: currentParagraphSpacing, firstLineIndent: currentFirstLineIndent,
+                    theme: .current
                 )
                 hc.view.invalidateIntrinsicContentSize()
             }
@@ -191,7 +209,12 @@ class ReaderTextViewController: BaseViewController {
             "Reader.textFontFamily",
             "Reader.textFontSize",
             "Reader.textLineSpacing",
-            "Reader.textHorizontalPadding"
+            "Reader.textHorizontalPadding",
+            "Reader.textTopPadding",
+            "Reader.textBottomPadding",
+            "Reader.textParagraphSpacing",
+            "Reader.textFirstLineIndent",
+            "Reader.textBackgroundColor"
         ]
         for key in styleKeys {
             NotificationCenter.default.addObserver(
@@ -414,6 +437,7 @@ extension ReaderTextViewController {
     }
 
     @objc private func textStyleChanged() {
+        scrollView.backgroundColor = TextReaderTheme.current.backgroundColor
         refreshTextViews()
     }
 
@@ -817,6 +841,57 @@ extension ReaderTextViewController: ReaderReaderDelegate {
         Task {
             await loadInitialChapter(chapter, restorePosition: startPage > 0)
         }
+    }
+}
+
+// MARK: - Microsoft Speech
+
+extension ReaderTextViewController: ReaderSpeechTextProviding {
+    func speechSegmentsFromCurrentPosition() -> [ReaderSpeechSegment] {
+        guard let sectionIndex = currentSectionIndex else { return [] }
+        let section = sections[sectionIndex]
+        let viewportCenter = scrollView.contentOffset.y + scrollView.bounds.height / 2
+        let sectionStart = sectionContentStartY(at: sectionIndex)
+
+        var pageStart = sectionStart
+        var currentIndex = 0
+        for (index, controller) in section.hostingControllers.enumerated() {
+            let pageEnd = pageStart + controller.view.bounds.height
+            if viewportCenter <= pageEnd {
+                currentIndex = index
+                break
+            }
+            pageStart = pageEnd
+            currentIndex = min(index + 1, max(0, section.pages.count - 1))
+        }
+
+        guard section.pages.indices.contains(currentIndex) else { return [] }
+        return section.pages[currentIndex...].enumerated().compactMap { offset, page in
+            guard let text = ReaderSpeechTextExtractor.text(from: page) else { return nil }
+            let index = currentIndex + offset
+            return ReaderSpeechSegment(
+                id: "\(section.chapter.key)|\(index)",
+                chapterKey: section.chapter.key,
+                pageIndex: index,
+                text: text
+            )
+        }
+    }
+
+    func revealSpeechSegment(_ segment: ReaderSpeechSegment) {
+        guard
+            let sectionIndex = sections.firstIndex(where: { $0.chapter.key == segment.chapterKey }),
+            sections[sectionIndex].hostingControllers.indices.contains(segment.pageIndex)
+        else {
+            return
+        }
+
+        var targetY = sectionContentStartY(at: sectionIndex)
+        for index in 0..<segment.pageIndex {
+            targetY += sections[sectionIndex].hostingControllers[index].view.bounds.height
+        }
+        let minimumY = -scrollView.adjustedContentInset.top
+        scrollView.setContentOffset(CGPoint(x: 0, y: max(minimumY, targetY)), animated: false)
     }
 }
 

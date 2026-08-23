@@ -18,7 +18,7 @@ enum ReaderSpeechProvider: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-            case .microsoft: readerSpeechLocalized("READER_TTS_PROVIDER_MICROSOFT", fallback: "微软在线语音")
+            case .microsoft: readerSpeechLocalized("READER_TTS_PROVIDER_MICROSOFT", fallback: "微软免费在线语音")
             case .local: readerSpeechLocalized("READER_TTS_PROVIDER_LOCAL", fallback: "本地离线模型")
         }
     }
@@ -36,17 +36,13 @@ protocol ReaderSpeechEngine: Sendable {
 }
 
 struct ReaderMicrosoftSpeechEngine: ReaderSpeechEngine {
-    let region: String
-    let subscriptionKey: String
     let voice: MicrosoftSpeechVoice
 
-    var cacheIdentifier: String { "microsoft|\(region)|\(voice.rawValue)" }
+    var cacheIdentifier: String { "microsoft-edge|\(voice.rawValue)" }
 
     func synthesize(_ request: ReaderSpeechSynthesisRequest) async throws -> Data {
         try await MicrosoftSpeechService.synthesize(
             text: request.text,
-            region: region,
-            subscriptionKey: subscriptionKey,
             voice: voice,
             rate: request.rate
         )

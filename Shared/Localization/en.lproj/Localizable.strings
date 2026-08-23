@@ -902,13 +902,13 @@
 
 // Reader speech
 "READER_TTS_ENGINE" = "Speech Engine";
-"READER_TTS_PROVIDER_MICROSOFT" = "Microsoft Online Speech";
+"READER_TTS_PROVIDER_MICROSOFT" = "Microsoft Free Online Speech";
 "READER_TTS_PROVIDER_LOCAL" = "Local Offline Model";
 "MICROSOFT_TTS_TITLE" = "Read Aloud";
-"MICROSOFT_TTS_SERVICE" = "Microsoft Azure Speech";
-"MICROSOFT_TTS_REGION" = "Azure region, for example eastasia";
-"MICROSOFT_TTS_KEY" = "Azure Speech key";
-"MICROSOFT_TTS_KEY_INFO" = "The key is stored only in this device's Keychain. Text is sent to Microsoft for online synthesis.";
+"MICROSOFT_TTS_SERVICE" = "Microsoft Free Online Speech";
+"MICROSOFT_TTS_FREE_READY" = "No account or key required";
+"MICROSOFT_TTS_FREE_INFO" = "Text is sent to Microsoft Edge's online read-aloud service. This free interface may change when Microsoft updates the service.";
+"MICROSOFT_TTS_FREE_UNAVAILABLE" = "Microsoft free online speech is temporarily unavailable. Check your connection and try again.";
 "MICROSOFT_TTS_VOICE" = "Voice";
 "MICROSOFT_TTS_XIAOXIAO" = "Xiaoxiao (female)";
 "MICROSOFT_TTS_YUNXI" = "Yunxi (male)";
@@ -921,14 +921,10 @@
 "MICROSOFT_TTS_LOADING" = "Synthesizing";
 "MICROSOFT_TTS_LOADING_TEXT" = "Loading Text";
 "MICROSOFT_TTS_FOREGROUND_ONLY" = "This stable version supports foreground playback only and reads from the current text position to the end of the chapter.";
-"MICROSOFT_TTS_CONFIGURATION_REQUIRED" = "Enter your Azure Speech region and key first.";
 "LOCAL_TTS_CONFIGURATION_REQUIRED" = "Import and select a local speech model first.";
 "MICROSOFT_TTS_NO_TEXT" = "There is no readable text at the current position.";
 "MICROSOFT_TTS_PROGRESS" = "Segment %d of %d";
 "MICROSOFT_TTS_LOADING_NEXT" = "Loading the next chapter";
 "MICROSOFT_TTS_CHAPTER_FINISHED" = "Chapter reading complete";
-"MICROSOFT_TTS_INVALID_REGION" = "The Azure region format is invalid.";
 "MICROSOFT_TTS_INVALID_RESPONSE" = "Microsoft Speech returned invalid audio.";
 "MICROSOFT_TTS_PLAYBACK_FAILED" = "Speech playback failed.";
-"MICROSOFT_TTS_UNAUTHORIZED" = "The Azure key and region do not match (401).";
-"MICROSOFT_TTS_RATE_LIMITED" = "Microsoft Speech has reached its request or quota limit (429). Try again later.";

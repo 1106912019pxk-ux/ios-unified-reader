@@ -8,7 +8,7 @@
 import AVFoundation
 import AidokuRunner
 import Combine
-import Security
+import CryptoKit
 import SwiftUI
 import UniformTypeIdentifiers
 import ZIPFoundation
@@ -102,17 +102,11 @@ final class ReaderSpeechSettingsStore: ObservableObject {
     @Published var provider: ReaderSpeechProvider {
         didSet { UserDefaults.standard.set(provider.rawValue, forKey: Self.providerKey) }
     }
-    @Published var region: String {
-        didSet { UserDefaults.standard.set(region, forKey: Self.regionKey) }
-    }
     @Published var voice: MicrosoftSpeechVoice {
         didSet { UserDefaults.standard.set(voice.rawValue, forKey: Self.voiceKey) }
     }
     @Published var rate: Double {
         didSet { UserDefaults.standard.set(rate, forKey: Self.rateKey) }
-    }
-    @Published var subscriptionKey: String {
-        didSet { Self.storeSubscriptionKey(subscriptionKey) }
     }
     @Published var selectedModelId: String? {
         didSet { UserDefaults.standard.set(selectedModelId, forKey: Self.selectedModelKey) }
@@ -124,8 +118,7 @@ final class ReaderSpeechSettingsStore: ObservableObject {
     var isConfigured: Bool {
         switch provider {
             case .microsoft:
-                !region.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    && !subscriptionKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                true
             case .local:
                 ReaderSpeechModelManager.shared.model(id: selectedModelId) != nil
         }
@@ -134,10 +127,7 @@ final class ReaderSpeechSettingsStore: ObservableObject {
     var configurationMessage: String {
         switch provider {
             case .microsoft:
-                readerSpeechLocalized(
-                    "MICROSOFT_TTS_CONFIGURATION_REQUIRED",
-                    fallback: "请先填写 Azure Speech 区域和密钥。"
-                )
+                ""
             case .local:
                 readerSpeechLocalized(
                     "LOCAL_TTS_CONFIGURATION_REQUIRED",
@@ -147,23 +137,18 @@ final class ReaderSpeechSettingsStore: ObservableObject {
     }
 
     private static let providerKey = "Reader.speechProvider"
-    private static let regionKey = "Reader.microsoftSpeechRegion"
     private static let voiceKey = "Reader.microsoftSpeechVoice"
     private static let rateKey = "Reader.microsoftSpeechRate"
     private static let selectedModelKey = "Reader.localSpeechModel"
     private static let speakerKey = "Reader.localSpeechSpeaker"
-    private static let keychainService = "app.aidoku.reader.microsoft-speech"
-    private static let keychainAccount = "subscription-key"
 
     private init() {
         provider = UserDefaults.standard.string(forKey: Self.providerKey)
             .flatMap(ReaderSpeechProvider.init(rawValue:)) ?? .microsoft
-        region = UserDefaults.standard.string(forKey: Self.regionKey) ?? ""
         voice = UserDefaults.standard.string(forKey: Self.voiceKey)
             .flatMap(MicrosoftSpeechVoice.init(rawValue:)) ?? .xiaoxiao
         let storedRate = UserDefaults.standard.object(forKey: Self.rateKey) as? Double
         rate = min(1.6, max(0.6, storedRate ?? 1.0))
-        subscriptionKey = Self.loadSubscriptionKey()
         selectedModelId = UserDefaults.standard.string(forKey: Self.selectedModelKey)
         speaker = max(0, UserDefaults.standard.integer(forKey: Self.speakerKey))
     }
@@ -171,53 +156,12 @@ final class ReaderSpeechSettingsStore: ObservableObject {
     func makeEngine() throws -> any ReaderSpeechEngine {
         switch provider {
             case .microsoft:
-                return ReaderMicrosoftSpeechEngine(
-                    region: region.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
-                    subscriptionKey: subscriptionKey.trimmingCharacters(in: .whitespacesAndNewlines),
-                    voice: voice
-                )
+                return ReaderMicrosoftSpeechEngine(voice: voice)
             case .local:
                 guard let model = ReaderSpeechModelManager.shared.model(id: selectedModelId) else {
                     throw ReaderSpeechModelError.missingModel
                 }
                 return ReaderLocalSpeechEngine(model: model)
-        }
-    }
-
-    private static func loadSubscriptionKey() -> String {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: keychainAccount,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        var result: CFTypeRef?
-        guard
-            SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-            let data = result as? Data,
-            let value = String(data: data, encoding: .utf8)
-        else {
-            return ""
-        }
-        return value
-    }
-
-    private static func storeSubscriptionKey(_ value: String) {
-        let identity: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: keychainAccount
-        ]
-        SecItemDelete(identity as CFDictionary)
-        guard !value.isEmpty, let data = value.data(using: .utf8) else { return }
-
-        var item = identity
-        item[kSecValueData as String] = data
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        let status = SecItemAdd(item as CFDictionary, nil)
-        if status != errSecSuccess {
-            LogManager.logger.error("Unable to store Microsoft Speech key: \(status)")
         }
     }
 }
@@ -512,87 +456,182 @@ extension ReaderSpeechController: AVAudioPlayerDelegate {
 }
 
 enum MicrosoftSpeechService {
+    private static let trustedClientToken = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
+    private static let chromiumVersion = "143.0.3650.75"
+    private static let gecVersion = "1-143.0.3650.75"
+    private static let endpoint = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1"
+
     static func synthesize(
         text: String,
-        region: String,
-        subscriptionKey: String,
         voice: MicrosoftSpeechVoice,
         rate: Double
     ) async throws -> Data {
-        guard region.range(of: #"^[a-z0-9-]+$"#, options: .regularExpression) != nil else {
-            throw ReaderSpeechError.invalidRegion
-        }
-        guard let url = URL(string: "https://\(region).tts.speech.microsoft.com/cognitiveservices/v1") else {
-            throw ReaderSpeechError.invalidRegion
+        let connectionId = identifier()
+        let requestId = identifier()
+        var components = URLComponents(string: endpoint)
+        components?.queryItems = [
+            URLQueryItem(name: "TrustedClientToken", value: trustedClientToken),
+            URLQueryItem(name: "ConnectionId", value: connectionId),
+            URLQueryItem(name: "Sec-MS-GEC", value: securityToken()),
+            URLQueryItem(name: "Sec-MS-GEC-Version", value: gecVersion)
+        ]
+        guard let url = components?.url else { throw ReaderSpeechError.invalidResponse }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 30
+        request.setValue(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                + "(KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/\(chromiumVersion)",
+            forHTTPHeaderField: "User-Agent"
+        )
+        request.setValue("no-cache", forHTTPHeaderField: "Pragma")
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        request.setValue("zh-CN,zh;q=0.9,en;q=0.8", forHTTPHeaderField: "Accept-Language")
+        request.setValue("chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold", forHTTPHeaderField: "Origin")
+        request.setValue("muid=\(identifier().uppercased())", forHTTPHeaderField: "Cookie")
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 60
+        let session = URLSession(configuration: configuration)
+        let socket = session.webSocketTask(with: request)
+        socket.resume()
+        defer {
+            socket.cancel(with: .normalClosure, reason: nil)
+            session.invalidateAndCancel()
         }
 
         let ratePercent = Int(((rate - 1) * 100).rounded())
         let rateValue = ratePercent >= 0 ? "+\(ratePercent)%" : "\(ratePercent)%"
-        let escapedText = text
+        let requestTimestamp = timestamp()
+        let speechConfig = """
+        X-Timestamp:\(requestTimestamp)\r
+        Content-Type:application/json; charset=utf-8\r
+        Path:speech.config\r
+        \r
+        {"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}
+        """
+        let ssmlBody = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='zh-CN'>"
+            + "<voice name='\(voice.rawValue)'><prosody pitch='+0Hz' rate='\(rateValue)' volume='+0%'>"
+            + "\(xmlEscaped(text))</prosody></voice></speak>"
+        let ssml = """
+        X-RequestId:\(requestId)\r
+        Content-Type:application/ssml+xml\r
+        X-Timestamp:\(requestTimestamp)Z\r
+        Path:ssml\r
+        \r
+        \(ssmlBody)
+        """
+
+        do {
+            try await socket.send(.string(speechConfig))
+            try await socket.send(.string(ssml))
+        } catch {
+            throw ReaderSpeechError.freeServiceUnavailable(detail: error.localizedDescription)
+        }
+
+        var audio = Data()
+        while !Task.isCancelled {
+            let message: URLSessionWebSocketTask.Message
+            do {
+                message = try await socket.receive()
+            } catch {
+                throw ReaderSpeechError.freeServiceUnavailable(detail: error.localizedDescription)
+            }
+
+            switch message {
+                case let .data(data):
+                    if let chunk = audioPayload(from: data) {
+                        audio.append(chunk)
+                    }
+                case let .string(text):
+                    if messagePath(in: text) == "turn.end" {
+                        guard !audio.isEmpty else { throw ReaderSpeechError.invalidResponse }
+                        return audio
+                    }
+                @unknown default:
+                    break
+            }
+        }
+        throw CancellationError()
+    }
+
+    private static func identifier() -> String {
+        UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+    }
+
+    private static func securityToken(date: Date = Date()) -> String {
+        let windowsEpochOffset: Int64 = 11_644_473_600
+        let unixSeconds = Int64(date.timeIntervalSince1970)
+        let roundedSeconds = ((unixSeconds + windowsEpochOffset) / 300) * 300
+        let ticks = roundedSeconds * 10_000_000
+        let input = Data("\(ticks)\(trustedClientToken)".utf8)
+        return SHA256.hash(data: input).map { String(format: "%02X", $0) }.joined()
+    }
+
+    private static func timestamp(date: Date = Date()) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE MMM dd yyyy HH:mm:ss 'GMT+0000 (Coordinated Universal Time)'"
+        return formatter.string(from: date)
+    }
+
+    private static func xmlEscaped(_ text: String) -> String {
+        text
             .replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
             .replacingOccurrences(of: "\"", with: "&quot;")
             .replacingOccurrences(of: "'", with: "&apos;")
-        let ssml = """
-        <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="zh-CN">
-          <voice name="\(voice.rawValue)"><prosody rate="\(rateValue)">\(escapedText)</prosody></voice>
-        </speak>
-        """
+    }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.httpBody = Data(ssml.utf8)
-        request.setValue(subscriptionKey, forHTTPHeaderField: "Ocp-Apim-Subscription-Key")
-        request.setValue("application/ssml+xml", forHTTPHeaderField: "Content-Type")
-        request.setValue("audio-24khz-48kbitrate-mono-mp3", forHTTPHeaderField: "X-Microsoft-OutputFormat")
-        request.setValue("Aidoku-Reader", forHTTPHeaderField: "User-Agent")
-        request.timeoutInterval = 30
+    private static func audioPayload(from data: Data) -> Data? {
+        guard data.count >= 2 else { return nil }
+        let headerLength = (Int(data[data.startIndex]) << 8) | Int(data[data.startIndex + 1])
+        let headerStart = data.startIndex + 2
+        let payloadStart = headerStart + headerLength
+        guard payloadStart <= data.endIndex else { return nil }
+        let headerData = data[headerStart..<payloadStart]
+        guard
+            let headers = String(data: headerData, encoding: .utf8),
+            messagePath(in: headers) == "audio"
+        else {
+            return nil
+        }
+        return Data(data[payloadStart...])
+    }
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw ReaderSpeechError.invalidResponse
+    private static func messagePath(in headers: String) -> String? {
+        guard let line = headers
+            .components(separatedBy: "\r\n")
+            .first(where: { $0.lowercased().hasPrefix("path:") })
+        else {
+            return nil
         }
-        guard http.statusCode == 200 else {
-            let detail = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            throw ReaderSpeechError.service(statusCode: http.statusCode, detail: detail)
-        }
-        guard !data.isEmpty else { throw ReaderSpeechError.invalidResponse }
-        return data
+        return String(line.dropFirst("path:".count))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
     }
 }
 
 enum ReaderSpeechError: LocalizedError {
-    case invalidRegion
     case invalidResponse
     case playbackFailed
-    case service(statusCode: Int, detail: String?)
+    case freeServiceUnavailable(detail: String?)
 
     var errorDescription: String? {
         switch self {
-            case .invalidRegion:
-                readerSpeechLocalized("MICROSOFT_TTS_INVALID_REGION", fallback: "Azure 区域格式不正确。")
             case .invalidResponse:
                 readerSpeechLocalized("MICROSOFT_TTS_INVALID_RESPONSE", fallback: "微软语音返回了无效音频。")
             case .playbackFailed:
                 readerSpeechLocalized("MICROSOFT_TTS_PLAYBACK_FAILED", fallback: "语音播放失败。")
-            case let .service(statusCode, detail):
-                switch statusCode {
-                    case 401:
-                        readerSpeechLocalized(
-                            "MICROSOFT_TTS_UNAUTHORIZED",
-                            fallback: "Azure 密钥或区域不匹配（401）。"
-                        )
-                    case 429:
-                        readerSpeechLocalized(
-                            "MICROSOFT_TTS_RATE_LIMITED",
-                            fallback: "微软语音请求过多或额度不足（429），请稍后重试。"
-                        )
-                    default:
-                        detail?.isEmpty == false
-                            ? "Microsoft Speech \(statusCode): \(detail!)"
-                            : "Microsoft Speech HTTP \(statusCode)"
-                }
+            case let .freeServiceUnavailable(detail):
+                let message = readerSpeechLocalized(
+                    "MICROSOFT_TTS_FREE_UNAVAILABLE",
+                    fallback: "微软免费在线语音暂时不可用，请检查网络后重试。"
+                )
+                return detail?.isEmpty == false ? "\(message)（\(detail!)）" : message
         }
     }
 }
@@ -620,7 +659,7 @@ struct ReaderSpeechControlView: View {
                 }
 
                 if settings.provider == .microsoft {
-                    microsoftSettings
+                    microsoftOnlineSettings
                 } else {
                     localModelSettings
                 }
@@ -731,25 +770,18 @@ struct ReaderSpeechControlView: View {
         }
     }
 
-    private var microsoftSettings: some View {
+    private var microsoftOnlineSettings: some View {
         Section {
-            TextField(
-                readerSpeechLocalized("MICROSOFT_TTS_REGION", fallback: "Azure 区域，例如 eastasia"),
-                text: $settings.region
+            Label(
+                readerSpeechLocalized("MICROSOFT_TTS_FREE_READY", fallback: "无需账号或密钥，联网即可使用"),
+                systemImage: "network"
             )
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            SecureField(
-                readerSpeechLocalized("MICROSOFT_TTS_KEY", fallback: "Azure Speech 密钥"),
-                text: $settings.subscriptionKey
-            )
-            .textContentType(.password)
         } header: {
-            Text(readerSpeechLocalized("MICROSOFT_TTS_SERVICE", fallback: "微软 Azure 语音"))
+            Text(readerSpeechLocalized("MICROSOFT_TTS_SERVICE", fallback: "微软免费在线语音"))
         } footer: {
             Text(readerSpeechLocalized(
-                "MICROSOFT_TTS_KEY_INFO",
-                fallback: "密钥只保存在本机钥匙串。正文会发送给微软在线合成。"
+                "MICROSOFT_TTS_FREE_INFO",
+                fallback: "正文会发送到微软 Edge 在线朗读服务生成语音；该免费接口可能随微软调整而变化。"
             ))
         }
     }

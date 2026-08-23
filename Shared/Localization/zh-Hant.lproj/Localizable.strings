@@ -740,13 +740,13 @@
 
 // Reader speech
 "READER_TTS_ENGINE" = "語音引擎";
-"READER_TTS_PROVIDER_MICROSOFT" = "微軟線上語音";
+"READER_TTS_PROVIDER_MICROSOFT" = "微軟免費線上語音";
 "READER_TTS_PROVIDER_LOCAL" = "本機離線模型";
 "MICROSOFT_TTS_TITLE" = "語音讀書";
-"MICROSOFT_TTS_SERVICE" = "微軟 Azure 語音";
-"MICROSOFT_TTS_REGION" = "Azure 區域，例如 eastasia";
-"MICROSOFT_TTS_KEY" = "Azure Speech 金鑰";
-"MICROSOFT_TTS_KEY_INFO" = "金鑰只會儲存在本機鑰匙圈。正文會傳送給微軟進行線上合成。";
+"MICROSOFT_TTS_SERVICE" = "微軟免費線上語音";
+"MICROSOFT_TTS_FREE_READY" = "無需帳號或金鑰，連線即可使用";
+"MICROSOFT_TTS_FREE_INFO" = "正文會傳送到微軟 Edge 線上朗讀服務產生語音；此免費介面可能隨微軟調整而變更。";
+"MICROSOFT_TTS_FREE_UNAVAILABLE" = "微軟免費線上語音暫時無法使用，請檢查網路後重試。";
 "MICROSOFT_TTS_VOICE" = "音色";
 "MICROSOFT_TTS_XIAOXIAO" = "曉曉（女聲）";
 "MICROSOFT_TTS_YUNXI" = "雲希（男聲）";
@@ -759,14 +759,10 @@
 "MICROSOFT_TTS_LOADING" = "正在合成";
 "MICROSOFT_TTS_LOADING_TEXT" = "正在讀取正文";
 "MICROSOFT_TTS_FOREGROUND_ONLY" = "目前穩定版只支援前景播放，並從目前文字位置朗讀到本章末尾。";
-"MICROSOFT_TTS_CONFIGURATION_REQUIRED" = "請先填寫 Azure Speech 區域和金鑰。";
 "LOCAL_TTS_CONFIGURATION_REQUIRED" = "請先匯入並選擇一個本機語音模型。";
 "MICROSOFT_TTS_NO_TEXT" = "目前位置沒有可朗讀的文字。";
 "MICROSOFT_TTS_PROGRESS" = "第 %d/%d 段";
 "MICROSOFT_TTS_LOADING_NEXT" = "正在讀取下一章";
 "MICROSOFT_TTS_CHAPTER_FINISHED" = "本章朗讀完成";
-"MICROSOFT_TTS_INVALID_REGION" = "Azure 區域格式不正確。";
 "MICROSOFT_TTS_INVALID_RESPONSE" = "微軟語音傳回了無效音訊。";
 "MICROSOFT_TTS_PLAYBACK_FAILED" = "語音播放失敗。";
-"MICROSOFT_TTS_UNAUTHORIZED" = "Azure 金鑰或區域不相符（401）。";
-"MICROSOFT_TTS_RATE_LIMITED" = "微軟語音要求過多或額度不足（429），請稍後再試。";

@@ -384,19 +384,28 @@ struct ReaderLocalSpeechEngine: ReaderSpeechEngine {
             return try path(value, directory: directory)
         }
 
-        let modelConfig: SherpaOnnxOfflineTtsModelConfig
+        let ruleFsts = try paths(manifest.ruleFsts)
+        let ruleFars = try paths(manifest.ruleFars)
+        let tts: SherpaOnnxOfflineTtsWrapper
         switch manifest.family {
             case .vits:
-                let config = sherpaOnnxOfflineTtsVitsModelConfig(
+                let vits = sherpaOnnxOfflineTtsVitsModelConfig(
                     model: try path(manifest.model),
                     lexicon: try paths(manifest.lexicons),
                     tokens: try path(manifest.tokens),
                     dataDir: try optionalPath(manifest.dataDirectory, directory: true),
                     dictDir: try optionalPath(manifest.dictionaryDirectory, directory: true)
                 )
-                modelConfig = sherpaOnnxOfflineTtsModelConfig(vits: config, numThreads: 2)
+                let model = sherpaOnnxOfflineTtsModelConfig(vits: vits, numThreads: 2)
+                var config = sherpaOnnxOfflineTtsConfig(
+                    model: model,
+                    ruleFsts: ruleFsts,
+                    ruleFars: ruleFars,
+                    maxNumSentences: 1
+                )
+                tts = SherpaOnnxOfflineTtsWrapper(config: &config)
             case .matcha:
-                let config = sherpaOnnxOfflineTtsMatchaModelConfig(
+                let matcha = sherpaOnnxOfflineTtsMatchaModelConfig(
                     acousticModel: try path(manifest.acousticModel),
                     vocoder: try path(manifest.vocoder),
                     lexicon: try paths(manifest.lexicons),
@@ -404,9 +413,16 @@ struct ReaderLocalSpeechEngine: ReaderSpeechEngine {
                     dataDir: try optionalPath(manifest.dataDirectory, directory: true),
                     dictDir: try optionalPath(manifest.dictionaryDirectory, directory: true)
                 )
-                modelConfig = sherpaOnnxOfflineTtsModelConfig(matcha: config, numThreads: 2)
+                let model = sherpaOnnxOfflineTtsModelConfig(matcha: matcha, numThreads: 2)
+                var config = sherpaOnnxOfflineTtsConfig(
+                    model: model,
+                    ruleFsts: ruleFsts,
+                    ruleFars: ruleFars,
+                    maxNumSentences: 1
+                )
+                tts = SherpaOnnxOfflineTtsWrapper(config: &config)
             case .kokoro:
-                let config = sherpaOnnxOfflineTtsKokoroModelConfig(
+                let kokoro = sherpaOnnxOfflineTtsKokoroModelConfig(
                     model: try path(manifest.model),
                     voices: try path(manifest.voices),
                     tokens: try path(manifest.tokens),
@@ -415,16 +431,16 @@ struct ReaderLocalSpeechEngine: ReaderSpeechEngine {
                     lexicon: try paths(manifest.lexicons),
                     lang: manifest.language ?? ""
                 )
-                modelConfig = sherpaOnnxOfflineTtsModelConfig(kokoro: config, numThreads: 2)
+                let model = sherpaOnnxOfflineTtsModelConfig(kokoro: kokoro, numThreads: 2)
+                var config = sherpaOnnxOfflineTtsConfig(
+                    model: model,
+                    ruleFsts: ruleFsts,
+                    ruleFars: ruleFars,
+                    maxNumSentences: 1
+                )
+                tts = SherpaOnnxOfflineTtsWrapper(config: &config)
         }
 
-        var config = sherpaOnnxOfflineTtsConfig(
-            model: modelConfig,
-            ruleFsts: try paths(manifest.ruleFsts),
-            ruleFars: try paths(manifest.ruleFars),
-            maxNumSentences: 1
-        )
-        let tts = SherpaOnnxOfflineTtsWrapper(config: &config)
         guard tts.tts != nil else { throw ReaderSpeechModelError.invalidModel }
         return tts
     }

@@ -6,6 +6,7 @@
 //
 
 import AVFoundation
+import AidokuRunner
 import Combine
 import Security
 import SwiftUI
@@ -39,6 +40,32 @@ enum ReaderSpeechTextExtractor {
             return nil
         }
 
+        do {
+            var data = Data()
+            let archive = try Archive(url: zipURL, accessMode: .read)
+            guard let entry = archive.entry(at: filePath) else { return nil }
+            _ = try archive.extract(entry, consumer: { readData in
+                data.append(readData)
+            })
+            return String(data: data, encoding: .utf8)
+        } catch {
+            LogManager.logger.error("Unable to load text for speech: \(error)")
+            return nil
+        }
+    }
+
+    static func text(from page: AidokuRunner.Page) -> String? {
+        switch page.content {
+            case let .text(text):
+                return text
+            case let .zipFile(url, filePath):
+                return text(fromZip: url, filePath: filePath)
+            case .url, .image:
+                return nil
+        }
+    }
+
+    private static func text(fromZip zipURL: URL, filePath: String) -> String? {
         do {
             var data = Data()
             let archive = try Archive(url: zipURL, accessMode: .read)
@@ -219,7 +246,7 @@ final class ReaderSpeechController: NSObject, ObservableObject {
         }
     }
 
-    func start(segments: [ReaderSpeechSegment], settings: ReaderSpeechSettingsStore = .shared) {
+    func start(segments: [ReaderSpeechSegment], settings: ReaderSpeechSettingsStore) {
         stop()
         guard settings.isConfigured else {
             state = .failed(readerSpeechLocalized(
@@ -264,7 +291,7 @@ final class ReaderSpeechController: NSObject, ObservableObject {
         state = .paused
     }
 
-    func resume(settings: ReaderSpeechSettingsStore = .shared) {
+    func resume(settings: ReaderSpeechSettingsStore) {
         guard state == .paused else { return }
         if let player {
             player.play()
@@ -276,7 +303,7 @@ final class ReaderSpeechController: NSObject, ObservableObject {
 
     func togglePlayback(
         segments: [ReaderSpeechSegment],
-        settings: ReaderSpeechSettingsStore = .shared
+        settings: ReaderSpeechSettingsStore
     ) {
         switch state {
             case .playing: pause()
@@ -625,12 +652,12 @@ struct ReaderSpeechControlView: View {
                     HStack(spacing: 12) {
                         Button {
                             if controller.isActive {
-                                controller.togglePlayback(segments: [])
+                                controller.togglePlayback(segments: [], settings: settings)
                             } else {
                                 isLoadingSegments = true
                                 Task {
                                     let loadedSegments = await segments()
-                                    controller.togglePlayback(segments: loadedSegments)
+                                    controller.togglePlayback(segments: loadedSegments, settings: settings)
                                     isLoadingSegments = false
                                 }
                             }

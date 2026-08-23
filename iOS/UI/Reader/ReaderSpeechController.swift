@@ -623,9 +623,9 @@ enum ReaderSpeechError: LocalizedError {
     var errorDescription: String? {
         switch self {
             case .invalidResponse:
-                readerSpeechLocalized("MICROSOFT_TTS_INVALID_RESPONSE", fallback: "微软语音返回了无效音频。")
+                return readerSpeechLocalized("MICROSOFT_TTS_INVALID_RESPONSE", fallback: "微软语音返回了无效音频。")
             case .playbackFailed:
-                readerSpeechLocalized("MICROSOFT_TTS_PLAYBACK_FAILED", fallback: "语音播放失败。")
+                return readerSpeechLocalized("MICROSOFT_TTS_PLAYBACK_FAILED", fallback: "语音播放失败。")
             case let .freeServiceUnavailable(detail):
                 let message = readerSpeechLocalized(
                     "MICROSOFT_TTS_FREE_UNAVAILABLE",

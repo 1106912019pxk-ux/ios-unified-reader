@@ -780,3 +780,36 @@
 "EBOOK_USE_PUBLISHER_STYLES" = "使用出版方样式";
 "EBOOK_READING_SETTINGS" = "阅读设置";
 "EBOOK_FONT_IMPORTED_REOPEN" = "字体已导入。请重新打开本书，以便 EPUB 内容使用新导入的字体。";
+
+// Reader speech
+"READER_TTS_ENGINE" = "语音引擎";
+"READER_TTS_PROVIDER_MICROSOFT" = "微软在线语音";
+"READER_TTS_PROVIDER_LOCAL" = "本地离线模型";
+"MICROSOFT_TTS_TITLE" = "语音读书";
+"MICROSOFT_TTS_SERVICE" = "微软 Azure 语音";
+"MICROSOFT_TTS_REGION" = "Azure 区域，例如 eastasia";
+"MICROSOFT_TTS_KEY" = "Azure Speech 密钥";
+"MICROSOFT_TTS_KEY_INFO" = "密钥只保存在本机钥匙串。正文会发送给微软在线合成。";
+"MICROSOFT_TTS_VOICE" = "音色";
+"MICROSOFT_TTS_XIAOXIAO" = "晓晓（女声）";
+"MICROSOFT_TTS_YUNXI" = "云希（男声）";
+"MICROSOFT_TTS_RATE" = "语速";
+"MICROSOFT_TTS_PLAYBACK" = "播放";
+"MICROSOFT_TTS_START" = "开始朗读";
+"MICROSOFT_TTS_STOP" = "停止";
+"MICROSOFT_TTS_PAUSE" = "暂停";
+"MICROSOFT_TTS_RESUME" = "继续";
+"MICROSOFT_TTS_LOADING" = "正在合成";
+"MICROSOFT_TTS_LOADING_TEXT" = "正在读取正文";
+"MICROSOFT_TTS_FOREGROUND_ONLY" = "当前稳定版只支持前台播放，并从当前文字位置朗读到本章末尾。";
+"MICROSOFT_TTS_CONFIGURATION_REQUIRED" = "请先填写 Azure Speech 区域和密钥。";
+"LOCAL_TTS_CONFIGURATION_REQUIRED" = "请先导入并选择一个本地语音模型。";
+"MICROSOFT_TTS_NO_TEXT" = "当前位置没有可朗读的文字。";
+"MICROSOFT_TTS_PROGRESS" = "第 %d/%d 段";
+"MICROSOFT_TTS_LOADING_NEXT" = "正在读取下一章";
+"MICROSOFT_TTS_CHAPTER_FINISHED" = "本章朗读完成";
+"MICROSOFT_TTS_INVALID_REGION" = "Azure 区域格式不正确。";
+"MICROSOFT_TTS_INVALID_RESPONSE" = "微软语音返回了无效音频。";
+"MICROSOFT_TTS_PLAYBACK_FAILED" = "语音播放失败。";
+"MICROSOFT_TTS_UNAUTHORIZED" = "Azure 密钥或区域不匹配（401）。";
+"MICROSOFT_TTS_RATE_LIMITED" = "微软语音请求过多或额度不足（429），请稍后重试。";

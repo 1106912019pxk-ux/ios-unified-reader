@@ -599,6 +599,9 @@ class ReaderViewController: BaseObservingViewController {
                 controller: speechController,
                 segments: { [weak self] in
                     await self?.speechSegmentsFromCurrentPosition() ?? []
+                },
+                onDone: { [weak self] in
+                    self?.dismiss(animated: true)
                 }
             )
         )

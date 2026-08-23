@@ -131,6 +131,21 @@ final class ReaderSpeechSettingsStore: ObservableObject {
         }
     }
 
+    var configurationMessage: String {
+        switch provider {
+            case .microsoft:
+                readerSpeechLocalized(
+                    "MICROSOFT_TTS_CONFIGURATION_REQUIRED",
+                    fallback: "请先填写 Azure Speech 区域和密钥。"
+                )
+            case .local:
+                readerSpeechLocalized(
+                    "LOCAL_TTS_CONFIGURATION_REQUIRED",
+                    fallback: "请先导入并选择一个本地语音模型。"
+                )
+        }
+    }
+
     private static let providerKey = "Reader.speechProvider"
     private static let regionKey = "Reader.microsoftSpeechRegion"
     private static let voiceKey = "Reader.microsoftSpeechVoice"
@@ -249,12 +264,7 @@ final class ReaderSpeechController: NSObject, ObservableObject {
     func start(segments: [ReaderSpeechSegment], settings: ReaderSpeechSettingsStore) {
         stop()
         guard settings.isConfigured else {
-            state = .failed(readerSpeechLocalized(
-                "MICROSOFT_TTS_CONFIGURATION_REQUIRED",
-                fallback: settings.provider == .microsoft
-                    ? "请先填写 Azure Speech 区域和密钥。"
-                    : "请先导入并选择一个本地语音模型。"
-            ))
+            state = .failed(settings.configurationMessage)
             return
         }
 
@@ -593,8 +603,8 @@ struct ReaderSpeechControlView: View {
     @ObservedObject private var settings = ReaderSpeechSettingsStore.shared
     @ObservedObject private var modelManager = ReaderSpeechModelManager.shared
     let segments: () async -> [ReaderSpeechSegment]
+    let onDone: () -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @State private var showingModelImporter = false
     @State private var isLoadingSegments = false
 
@@ -602,7 +612,7 @@ struct ReaderSpeechControlView: View {
         PlatformNavigationStack {
             Form {
                 Section {
-                    Picker("TTS", selection: $settings.provider) {
+                    Picker(readerSpeechLocalized("READER_TTS_ENGINE", fallback: "语音引擎"), selection: $settings.provider) {
                         ForEach(ReaderSpeechProvider.allCases) { provider in
                             Text(provider.title).tag(provider)
                         }
@@ -647,11 +657,17 @@ struct ReaderSpeechControlView: View {
                     }
                     if case let .failed(message) = controller.state {
                         Text(message).foregroundStyle(.red)
+                    } else if !settings.isConfigured {
+                        Text(settings.configurationMessage).foregroundStyle(.orange)
                     }
 
                     HStack(spacing: 12) {
                         Button {
                             if controller.isActive {
+                                controller.togglePlayback(segments: [], settings: settings)
+                            } else if !settings.isConfigured {
+                                // Let the controller publish a visible, localized configuration error
+                                // instead of presenting a button that silently appears to do nothing.
                                 controller.togglePlayback(segments: [], settings: settings)
                             } else {
                                 isLoadingSegments = true
@@ -669,7 +685,6 @@ struct ReaderSpeechControlView: View {
                         .disabled(
                             isLoadingSegments
                                 || controller.state == .loading
-                                || (!settings.isConfigured && !controller.isActive)
                         )
 
                         Button(role: .destructive) {
@@ -694,7 +709,7 @@ struct ReaderSpeechControlView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(readerSpeechLocalized("DONE", fallback: "完成")) { dismiss() }
+                    Button(readerSpeechLocalized("DONE", fallback: "完成"), action: onDone)
                 }
             }
             .fileImporter(
@@ -804,5 +819,16 @@ struct ReaderSpeechControlView: View {
 }
 
 func readerSpeechLocalized(_ key: String, fallback: String) -> String {
-    NSLocalizedString(key, tableName: nil, bundle: .main, value: fallback, comment: "")
+    // Aidoku's NSLocalizedString compatibility helper intentionally ignores the `value`
+    // parameter, so missing keys otherwise leak into the UI as raw identifiers.
+    let englishFallback = fallbackBundle?.localizedString(
+        forKey: key,
+        value: fallback,
+        table: nil
+    ) ?? fallback
+    return Bundle.main.localizedString(
+        forKey: key,
+        value: englishFallback,
+        table: nil
+    )
 }

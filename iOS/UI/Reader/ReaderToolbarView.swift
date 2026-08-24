@@ -28,6 +28,16 @@ class ReaderToolbarView: UIView {
     private let incognitoModeLabel = UILabel()
     private let currentPageLabel = UILabel()
     private let pagesLeftLabel = UILabel()
+    private let autoReadingStack = UIStackView()
+    private let autoReadingSpeedLabel = UILabel()
+    private let autoReadingDecreaseButton = UIButton(type: .system)
+    private let autoReadingIncreaseButton = UIButton(type: .system)
+    private let autoReadingStopButton = UIButton(type: .system)
+
+    var onAutoReadingSpeedChange: ((Double) -> Void)?
+    var onAutoReadingStop: (() -> Void)?
+    private(set) var autoReadingSpeed = 1.0
+    private var autoReadingActive = false
 
     private var cancellables: [AnyCancellable] = []
 
@@ -61,6 +71,25 @@ class ReaderToolbarView: UIView {
 
         sliderView.semanticContentAttribute = .playback // for rtl languages
         addSubview(sliderView)
+
+        autoReadingSpeedLabel.font = .monospacedDigitSystemFont(ofSize: 14, weight: .semibold)
+        autoReadingSpeedLabel.textAlignment = .center
+        autoReadingSpeedLabel.widthAnchor.constraint(equalToConstant: 56).isActive = true
+
+        configureAutoReadingButton(autoReadingDecreaseButton, systemName: "minus", action: #selector(decreaseAutoReadingSpeed))
+        configureAutoReadingButton(autoReadingIncreaseButton, systemName: "plus", action: #selector(increaseAutoReadingSpeed))
+        configureAutoReadingButton(autoReadingStopButton, systemName: "stop.fill", action: #selector(stopAutoReading))
+        autoReadingStopButton.accessibilityLabel = textReaderLocalized("AUTO_READING_STOP", fallback: "Stop Auto Reading")
+
+        autoReadingStack.axis = .horizontal
+        autoReadingStack.alignment = .center
+        autoReadingStack.distribution = .equalCentering
+        autoReadingStack.addArrangedSubview(autoReadingDecreaseButton)
+        autoReadingStack.addArrangedSubview(autoReadingSpeedLabel)
+        autoReadingStack.addArrangedSubview(autoReadingIncreaseButton)
+        autoReadingStack.addArrangedSubview(autoReadingStopButton)
+        autoReadingStack.isHidden = true
+        addSubview(autoReadingStack)
     }
 
     func constrain() {
@@ -68,6 +97,7 @@ class ReaderToolbarView: UIView {
         currentPageLabel.translatesAutoresizingMaskIntoConstraints = false
         pagesLeftLabel.translatesAutoresizingMaskIntoConstraints = false
         sliderView.translatesAutoresizingMaskIntoConstraints = false
+        autoReadingStack.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
             incognitoModeLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
@@ -82,20 +112,67 @@ class ReaderToolbarView: UIView {
             sliderView.heightAnchor.constraint(equalToConstant: 12),
             sliderView.topAnchor.constraint(equalTo: topAnchor, constant: 10),
             sliderView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            sliderView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12)
+            sliderView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+
+            autoReadingStack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            autoReadingStack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            autoReadingStack.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -32)
         ])
+    }
+
+    private func configureAutoReadingButton(_ button: UIButton, systemName: String, action: Selector) {
+        button.setImage(UIImage(systemName: systemName), for: .normal)
+        button.addTarget(self, action: action, for: .touchUpInside)
+        button.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 36).isActive = true
+    }
+
+    func setAutoReading(active: Bool, speed: Double) {
+        autoReadingActive = active
+        autoReadingSpeed = min(4, max(0.5, speed))
+        autoReadingSpeedLabel.text = String(format: "%.2f×", autoReadingSpeed)
+        autoReadingDecreaseButton.isEnabled = autoReadingSpeed > 0.5
+        autoReadingIncreaseButton.isEnabled = autoReadingSpeed < 4
+        autoReadingStack.isHidden = !active
+        sliderView.isHidden = active
+        incognitoModeLabel.isHidden = active || !UserDefaults.standard.bool(forKey: "General.incognitoMode")
+        currentPageLabel.isHidden = active
+        pagesLeftLabel.isHidden = active
+    }
+
+    @objc private func decreaseAutoReadingSpeed() {
+        changeAutoReadingSpeed(by: -0.25)
+    }
+
+    @objc private func increaseAutoReadingSpeed() {
+        changeAutoReadingSpeed(by: 0.25)
+    }
+
+    private func changeAutoReadingSpeed(by amount: Double) {
+        let speed = min(4, max(0.5, ((autoReadingSpeed + amount) * 4).rounded() / 4))
+        setAutoReading(active: true, speed: speed)
+        onAutoReadingSpeedChange?(speed)
+    }
+
+    @objc private func stopAutoReading() {
+        onAutoReadingStop?()
     }
 
     func observe() {
         NotificationCenter.default.publisher(for: .incognitoMode)
             .sink { [weak self] _ in
-                self?.incognitoModeLabel.isHidden = !UserDefaults.standard.bool(forKey: "General.incognitoMode")
+                guard let self else { return }
+                self.incognitoModeLabel.isHidden = self.autoReadingActive
+                    || !UserDefaults.standard.bool(forKey: "General.incognitoMode")
             }
             .store(in: &cancellables)
     }
 
     // allow slider thumb to be touched outside bounds
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        if !autoReadingStack.isHidden, autoReadingStack.bounds.contains(convert(point, to: autoReadingStack)) {
+            return super.hitTest(point, with: event)
+        }
         for subview in subviews where subview is ReaderSliderView {
             if subview.subviews.contains(where: { $0.bounds.contains(convert(point, to: $0)) }) {
                 return subview

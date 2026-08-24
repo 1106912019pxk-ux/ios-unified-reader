@@ -23,6 +23,18 @@ protocol ReaderReaderDelegate: UIViewController {
     func setChapter(_ chapter: AidokuRunner.Chapter, startPage: Int)
 }
 
+/// A scrolling reader that can be driven by the reader-level auto reading session.
+/// The owning ReaderViewController remains responsible for mode switching, controls,
+/// and restoring the user's original reading mode.
+@MainActor
+protocol ReaderAutoScrolling: AnyObject {
+    var autoScrollingDidReachEnd: (() -> Void)? { get set }
+    func startAutoScrolling(speed: Double)
+    func updateAutoScrollingSpeed(_ speed: Double)
+    func pauseAutoScrolling()
+    func stopAutoScrolling()
+}
+
 extension ReaderReaderDelegate {
     func toggleOffset() {
         // do nothing by default

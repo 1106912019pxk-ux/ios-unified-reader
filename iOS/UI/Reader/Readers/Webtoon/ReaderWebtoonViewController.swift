@@ -10,6 +10,18 @@ import AsyncDisplayKit
 import Nuke
 import UIKit
 
+private final class ReaderWebtoonAutoScrollDisplayLinkProxy {
+    weak var owner: ReaderWebtoonViewController?
+
+    init(owner: ReaderWebtoonViewController) {
+        self.owner = owner
+    }
+
+    @objc func step(_ displayLink: CADisplayLink) {
+        owner?.handleAutoScrollFrame(displayLink)
+    }
+}
+
 class ReaderWebtoonViewController: ZoomableCollectionViewController {
 
     let viewModel: ReaderWebtoonViewModel
@@ -50,9 +62,21 @@ class ReaderWebtoonViewController: ZoomableCollectionViewController {
     // Stores the last calculated page number
     private var previousPage = 0
 
+    private let autoScrollBasePointsPerSecond: CGFloat = 28
+    private var autoScrollDisplayLink: CADisplayLink?
+    private var autoScrollDisplayLinkProxy: ReaderWebtoonAutoScrollDisplayLinkProxy?
+    private var autoScrollLastTimestamp: CFTimeInterval = 0
+    private var autoScrollSpeed = 1.0
+    private var isAutoScrollAdvancing = false
+    var autoScrollingDidReachEnd: (() -> Void)?
+
     init(source: AidokuRunner.Source?, manga: AidokuRunner.Manga) {
         self.viewModel = ReaderWebtoonViewModel(source: source, manga: manga)
         super.init(layout: VerticalContentOffsetPreservingLayout())
+    }
+
+    deinit {
+        autoScrollDisplayLink?.invalidate()
     }
 
     override func configure() {
@@ -200,7 +224,9 @@ extension ReaderWebtoonViewController {
     override func scrollViewDidScroll(_ scrollView: UIScrollView) {
         super.scrollViewDidScroll(scrollView)
 
-        isScrolling = true
+        if !isAutoScrollAdvancing {
+            isScrolling = true
+        }
 
         // ignore if page slider is being used
         guard !isSliding && !isZooming else { return }
@@ -213,7 +239,7 @@ extension ReaderWebtoonViewController {
         let pagePath = getCurrentPagePath()
         let pageSection = pagePath?.section ?? 0
 
-        if infinite {
+        if infinite || autoScrollDisplayLink != nil {
             // check if we need to switch chapters
             if chapterIndex > 0 && pageSection < chapterIndex {
                 movePreviousChapter()
@@ -251,6 +277,91 @@ extension ReaderWebtoonViewController {
         super.viewWillTransition(to: size, with: coordinator)
         coordinator.animate { _ in
             self.zoomView.adjustContentSize()
+        }
+    }
+}
+
+// MARK: - Auto Reading
+
+extension ReaderWebtoonViewController: ReaderAutoScrolling {
+    func startAutoScrolling(speed: Double) {
+        autoScrollSpeed = min(4, max(0.5, speed))
+        scrollView.isScrollEnabled = false
+        collectionNode.view.isScrollEnabled = false
+        guard autoScrollDisplayLink == nil else { return }
+        let proxy = ReaderWebtoonAutoScrollDisplayLinkProxy(owner: self)
+        let displayLink = CADisplayLink(target: proxy, selector: #selector(ReaderWebtoonAutoScrollDisplayLinkProxy.step(_:)))
+        displayLink.add(to: .main, forMode: .common)
+        autoScrollDisplayLinkProxy = proxy
+        autoScrollDisplayLink = displayLink
+        autoScrollLastTimestamp = 0
+    }
+
+    func updateAutoScrollingSpeed(_ speed: Double) {
+        autoScrollSpeed = min(4, max(0.5, speed))
+        autoScrollLastTimestamp = 0
+    }
+
+    func stopAutoScrolling() {
+        pauseAutoScrolling()
+        scrollView.isScrollEnabled = true
+        collectionNode.view.isScrollEnabled = true
+    }
+
+    func pauseAutoScrolling() {
+        autoScrollDisplayLink?.invalidate()
+        autoScrollDisplayLink = nil
+        autoScrollDisplayLinkProxy = nil
+        autoScrollLastTimestamp = 0
+    }
+
+    fileprivate func handleAutoScrollFrame(_ displayLink: CADisplayLink) {
+        guard !isSliding, !isZooming, scrollView.zoomScale == 1 else {
+            autoScrollLastTimestamp = displayLink.timestamp
+            return
+        }
+        guard autoScrollLastTimestamp > 0 else {
+            autoScrollLastTimestamp = displayLink.timestamp
+            return
+        }
+        let elapsed = min(0.1, displayLink.timestamp - autoScrollLastTimestamp)
+        autoScrollLastTimestamp = displayLink.timestamp
+        guard !pages.isEmpty, scrollView.contentSize.height > 0 else { return }
+
+        let maximumOffset = max(0, scrollView.contentSize.height - scrollView.bounds.height)
+        let distance = autoScrollBasePointsPerSecond * CGFloat(autoScrollSpeed) * CGFloat(elapsed)
+        let target = min(maximumOffset, scrollView.contentOffset.y + distance)
+        isScrolling = false
+        isAutoScrollAdvancing = true
+        scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: target), animated: false)
+        isAutoScrollAdvancing = false
+
+        checkAutoScrollNextChapter()
+        let canContinue = delegate?.getNextChapter() != nil
+        if target >= maximumOffset - 0.5, !loadingNext, !canContinue {
+            stopAutoScrolling()
+            autoScrollingDidReachEnd?()
+        }
+    }
+
+    private func checkAutoScrollNextChapter() {
+        guard !loadingNext, !pages.isEmpty else { return }
+        let bottomPath = getCurrentPagePath(pos: .bottom)
+        let isAtBottom = bottomPath == nil
+            || (bottomPath?.section == pages.count - 1
+                && bottomPath?.item == pages[pages.count - 1].count - 1)
+        guard isAtBottom else { return }
+
+        let previousSectionCount = pages.count
+        loadingNext = true
+        delegate?.setCompleted()
+        Task {
+            await appendNextChapter()
+            loadingNext = false
+            if pages.count == previousSectionCount {
+                stopAutoScrolling()
+                autoScrollingDidReachEnd?()
+            }
         }
     }
 }
@@ -524,6 +635,13 @@ extension ReaderWebtoonViewController {
 
         // check if pages failed to load
         if viewModel.preloadedPages.isEmpty {
+            return
+        }
+
+        // Stop before a text spine entry is inserted into the image reader.
+        if autoScrollDisplayLink != nil, viewModel.preloadedPages.allSatisfy({ $0.isTextPage }) {
+            stopAutoScrolling()
+            autoScrollingDidReachEnd?()
             return
         }
 

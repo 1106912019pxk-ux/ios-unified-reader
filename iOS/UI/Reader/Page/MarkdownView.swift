@@ -24,7 +24,11 @@ func textReaderLocalized(_ key: String, fallback: String) -> String {
         "TEXT_BACKGROUND_SOFT_GRAY": "柔灰色",
         "TEXT_BACKGROUND_BLACK": "黑色",
         "IMPORTED_FONTS": "已导入字体",
-        "IMPORT_TTF_OTF_FONT": "导入 TTF/OTF 字体"
+        "IMPORT_TTF_OTF_FONT": "导入 TTF/OTF 字体",
+        "AUTO_READING": "自动阅读",
+        "AUTO_READING_SPEED": "自动阅读速度",
+        "AUTO_READING_START": "开始自动阅读",
+        "AUTO_READING_STOP": "停止自动阅读"
     ]
     let traditionalChinese = [
         "TEXT_TOP_PADDING": "上間距",
@@ -40,7 +44,11 @@ func textReaderLocalized(_ key: String, fallback: String) -> String {
         "TEXT_BACKGROUND_SOFT_GRAY": "柔灰色",
         "TEXT_BACKGROUND_BLACK": "黑色",
         "IMPORTED_FONTS": "已匯入字體",
-        "IMPORT_TTF_OTF_FONT": "匯入 TTF/OTF 字體"
+        "IMPORT_TTF_OTF_FONT": "匯入 TTF/OTF 字體",
+        "AUTO_READING": "自動閱讀",
+        "AUTO_READING_SPEED": "自動閱讀速度",
+        "AUTO_READING_START": "開始自動閱讀",
+        "AUTO_READING_STOP": "停止自動閱讀"
     ]
     if language.hasPrefix("zh-Hant") || language.hasPrefix("zh-TW") || language.hasPrefix("zh-HK") {
         return traditionalChinese[key] ?? fallback

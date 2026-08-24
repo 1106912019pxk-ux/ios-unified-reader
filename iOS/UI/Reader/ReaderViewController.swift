@@ -49,6 +49,30 @@ class ReaderViewController: BaseObservingViewController {
     private var speechInitiatedChapterChange = false
     private var pendingSpeechSegment: ReaderSpeechSegment?
 
+    private enum AutoReadingContent {
+        case text
+        case image
+    }
+
+    private struct AutoReadingSession {
+        let content: AutoReadingContent
+        let originalReadingMode: ReadingMode
+        let originalTextReaderStyle: String
+    }
+
+    private var autoReadingSession: AutoReadingSession?
+    private var autoReadingSpeed: Double {
+        get {
+            let value = UserDefaults.standard.object(forKey: "Reader.autoReadingSpeed") as? Double ?? 1
+            return min(4, max(0.5, value))
+        }
+        set {
+            UserDefaults.standard.set(min(4, max(0.5, newValue)), forKey: "Reader.autoReadingSpeed")
+        }
+    }
+    private var temporaryTextReaderStyle: String?
+    private var isAutoReadingActive: Bool { autoReadingSession != nil }
+
     weak var reader: ReaderReaderDelegate?
 
     // Dictionary popup state
@@ -219,6 +243,12 @@ class ReaderViewController: BaseObservingViewController {
         // toolbar view
         toolbarView.sliderView.addTarget(self, action: #selector(sliderMoved(_:)), for: .valueChanged)
         toolbarView.sliderView.addTarget(self, action: #selector(sliderStopped(_:)), for: .editingDidEnd)
+        toolbarView.onAutoReadingSpeedChange = { [weak self] speed in
+            self?.setAutoReadingSpeed(speed)
+        }
+        toolbarView.onAutoReadingStop = { [weak self] in
+            self?.stopAutoReading()
+        }
         toolbarView.translatesAutoresizingMaskIntoConstraints = false
         let toolbarButtonItemView = UIBarButtonItem(customView: toolbarView)
         toolbarButtonItemView.customView?.heightAnchor.constraint(equalToConstant: 40).isActive = true
@@ -591,7 +621,10 @@ class ReaderViewController: BaseObservingViewController {
             rootView: ReaderSettingsView(
                 mangaId: manga.identifier,
                 reader: currentReader,
-                chapterLanguage: chapter.language ?? source?.languages.first
+                chapterLanguage: chapter.language ?? source?.languages.first,
+                onStartAutoReading: { [weak self] speed in
+                    self?.startAutoReading(speed: speed)
+                }
             )
         )
         present(vc, animated: true)
@@ -639,12 +672,22 @@ class ReaderViewController: BaseObservingViewController {
     }
 
     @objc func close() {
+        autoReadingSession = nil
+        temporaryTextReaderStyle = nil
+        (reader as? ReaderAutoScrolling)?.stopAutoScrolling()
         speechController.stop()
         dismiss(animated: true)
     }
 
     private func updateReaderActionButtons() {
         webButton.isEnabled = chapter.url != nil
+        if let leftItems = navigationItem.leftBarButtonItems, leftItems.indices.contains(1) {
+            leftItems[1].isEnabled = !isAutoReadingActive
+        }
+        if isAutoReadingActive {
+            navigationItem.rightBarButtonItems = []
+            return
+        }
         if reader is ReaderSpeechTextProviding || isLocalEpubChapter || speechController.isActive {
             navigationItem.rightBarButtonItems = [webButton, speechButton, readerSettingsButton]
         } else {
@@ -718,17 +761,163 @@ class ReaderViewController: BaseObservingViewController {
     }
 
     @objc func sliderMoved(_ sender: ReaderSliderView) {
-        guard !speechController.isActive else { return }
+        guard !speechController.isActive, !isAutoReadingActive else { return }
         reader?.sliderMoved(value: sender.currentValue)
     }
     @objc func sliderStopped(_ sender: ReaderSliderView) {
-        guard !speechController.isActive else { return }
+        guard !speechController.isActive, !isAutoReadingActive else { return }
         reader?.sliderStopped(value: sender.currentValue)
     }
 
     private func setSpeechNavigationLocked(_ locked: Bool) {
         (reader as? ReaderSpeechTextProviding)?.setSpeechNavigationLocked(locked)
-        toolbarView.sliderView.isEnabled = !locked
+        toolbarView.sliderView.isEnabled = !locked && !isAutoReadingActive
+    }
+}
+
+// MARK: - Independent Auto Reading
+
+extension ReaderViewController {
+    private func startAutoReading(speed: Double) {
+        guard autoReadingSession == nil else {
+            setAutoReadingSpeed(speed)
+            return
+        }
+
+        let content: AutoReadingContent = switch reader {
+            case is ReaderTextViewController, is ReaderPagedTextViewController: .text
+            default: .image
+        }
+        let alreadyUsesAutoScrollReader = reader is ReaderTextViewController || reader is ReaderWebtoonViewController
+        speechController.stop()
+        autoReadingSpeed = speed
+        autoReadingSession = AutoReadingSession(
+            content: content,
+            originalReadingMode: readingMode,
+            originalTextReaderStyle: UserDefaults.standard.string(forKey: "Reader.textReaderStyle") ?? "paged"
+        )
+        toolbarView.setAutoReading(active: true, speed: autoReadingSpeed)
+        toolbarView.sliderView.isEnabled = false
+        dictionaryLongPressGesture?.isEnabled = false
+        updateReaderActionButtons()
+
+        Task {
+            await updateReadPosition()
+            await MainActor.run {
+                guard self.autoReadingSession != nil else { return }
+                switch content {
+                    case .text:
+                        self.temporaryTextReaderStyle = "scroll"
+                        self.setReader(.text)
+                    case .image:
+                        self.readingMode = .webtoon
+                        self.setReader(.scroll)
+                }
+                if !alreadyUsesAutoScrollReader {
+                    self.reader?.setChapter(self.chapter, startPage: self.currentPage)
+                }
+                self.configureAutoScrollingReaderIfNeeded()
+                self.updateTapZone()
+                self.hideBars()
+            }
+        }
+    }
+
+    private func setAutoReadingSpeed(_ speed: Double) {
+        autoReadingSpeed = speed
+        toolbarView.setAutoReading(active: isAutoReadingActive, speed: autoReadingSpeed)
+        (reader as? ReaderAutoScrolling)?.updateAutoScrollingSpeed(autoReadingSpeed)
+    }
+
+    private func configureAutoScrollingReaderIfNeeded() {
+        guard isAutoReadingActive, let autoReader = reader as? ReaderAutoScrolling else { return }
+        autoReader.autoScrollingDidReachEnd = { [weak self] in
+            self?.stopAutoReading()
+        }
+        autoReader.startAutoScrolling(speed: autoReadingSpeed)
+    }
+
+    private func stopAutoReading(completion: (() -> Void)? = nil) {
+        guard let session = autoReadingSession else {
+            completion?()
+            return
+        }
+
+        autoReadingSession = nil
+        (reader as? ReaderAutoScrolling)?.stopAutoScrolling()
+        toolbarView.setAutoReading(active: false, speed: autoReadingSpeed)
+        toolbarView.sliderView.isEnabled = !speechController.isActive
+        configureDictionaryLookupGesture()
+        updateReaderActionButtons()
+
+        Task {
+            await updateReadPosition()
+            await MainActor.run {
+                self.temporaryTextReaderStyle = nil
+                self.readingMode = session.originalReadingMode
+                let needsReaderReload: Bool
+                switch session.content {
+                    case .text:
+                        needsReaderReload = session.originalTextReaderStyle == "paged"
+                        self.setReader(.text)
+                    case .image:
+                        switch session.originalReadingMode {
+                            case .ltr, .rtl, .vertical:
+                                needsReaderReload = true
+                                self.setReader(.paged)
+                            case .webtoon, .continuous:
+                                needsReaderReload = false
+                                self.setReader(.scroll)
+                        }
+                }
+                if needsReaderReload {
+                    self.reader?.setChapter(self.chapter, startPage: self.currentPage)
+                }
+                self.updateTapZone()
+                completion?()
+            }
+        }
+    }
+
+    /// Text EPUBs may include image-only spine entries (typically covers). While
+    /// auto reading text, skip those entries and resume at the next text entry.
+    private func skipNonTextLocalEpubChapterDuringAutoReading() -> Bool {
+        guard
+            autoReadingSession?.content == .text,
+            manga.sourceKey == LocalSourceRunner.sourceKey,
+            chapter.key.lowercased().contains(".epub/"),
+            let anchorIndex = chapterList.firstIndex(of: chapter)
+        else {
+            return false
+        }
+
+        (reader as? ReaderAutoScrolling)?.pauseAutoScrolling()
+        Task {
+            if anchorIndex > 0 {
+                for index in stride(from: anchorIndex - 1, through: 0, by: -1) {
+                    let candidate = chapterList[index]
+                    guard candidate.key.lowercased().contains(".epub/") else { break }
+                    let candidatePages = await LocalFileManager.shared.fetchPages(
+                        mangaId: manga.key,
+                        chapterId: candidate.key
+                    )
+                    guard !candidatePages.isEmpty else { continue }
+                    if candidatePages.contains(where: { ReaderSpeechTextExtractor.text(from: $0) != nil }) {
+                        await MainActor.run {
+                            self.setChapter(candidate)
+                            self.currentPage = 1
+                            self.reader?.setChapter(candidate, startPage: 1)
+                            self.configureAutoScrollingReaderIfNeeded()
+                        }
+                        return
+                    }
+                }
+            }
+            await MainActor.run {
+                self.stopAutoReading()
+            }
+        }
+        return true
     }
 }
 
@@ -809,7 +998,9 @@ extension ReaderViewController {
                 toolbarView.sliderView.direction = .forward
 
                 // Check user preference for text reader style
-                let textReaderStyle = UserDefaults.standard.string(forKey: "Reader.textReaderStyle") ?? "paged"
+                let textReaderStyle = temporaryTextReaderStyle
+                    ?? UserDefaults.standard.string(forKey: "Reader.textReaderStyle")
+                    ?? "paged"
                 if textReaderStyle == "paged" {
                     // Kindle-like paginated experience
                     if !(reader is ReaderPagedTextViewController) {
@@ -830,6 +1021,7 @@ extension ReaderViewController {
             if type != .text && !speechInitiatedChapterChange {
                 speechController.stop()
             }
+            (reader as? ReaderAutoScrolling)?.stopAutoScrolling()
             reader?.remove()
             pageController.delegate = self
             reader = pageController
@@ -837,6 +1029,7 @@ extension ReaderViewController {
         }
         reader?.readingMode = readingMode
         setSpeechNavigationLocked(speechController.isActive)
+        configureAutoScrollingReaderIfNeeded()
         updateReaderActionButtons()
         configureDictionaryOverlayInteractionMode()
         configureDictionaryOverlayTapHandler()
@@ -1036,6 +1229,27 @@ extension ReaderViewController: ReaderHoldingDelegate {
     }
 
     func setPages(_ pages: [Page]) {
+
+        if let session = autoReadingSession {
+            let containsOnlyText = !pages.isEmpty && pages.allSatisfy({ $0.isTextPage })
+            switch session.content {
+                case .image where containsOnlyText:
+                    stopAutoReading { [weak self] in
+                        self?.setPages(pages)
+                    }
+                    return
+                case .text where !containsOnlyText:
+                    if skipNonTextLocalEpubChapterDuringAutoReading() {
+                        return
+                    }
+                    stopAutoReading { [weak self] in
+                        self?.setPages(pages)
+                    }
+                    return
+                default:
+                    break
+            }
+        }
 
         // If already in a text reader with text pages, just update toolbar - don't trigger any switches
         if (reader is ReaderPagedTextViewController || reader is ReaderTextViewController)
@@ -1266,7 +1480,7 @@ extension ReaderViewController {
 
     @objc func handleTap(_ gestureRecognizer: UITapGestureRecognizer) {
         let point = gestureRecognizer.location(in: view)
-        if speechController.isActive {
+        if speechController.isActive || isAutoReadingActive {
             toggleBarVisibility()
             return
         }
@@ -1427,7 +1641,7 @@ extension ReaderViewController: UIPencilInteractionDelegate {
     }
 
     private func nextPage() {
-        guard !speechController.isActive else { return }
+        guard !speechController.isActive, !isAutoReadingActive else { return }
         switch readingMode {
             case .rtl: reader?.moveLeft()
             default: reader?.moveRight()
@@ -1435,7 +1649,7 @@ extension ReaderViewController: UIPencilInteractionDelegate {
     }
 
     private func previousPage() {
-        guard !speechController.isActive else { return }
+        guard !speechController.isActive, !isAutoReadingActive else { return }
         switch readingMode {
             case .rtl: reader?.moveRight()
             default: reader?.moveLeft()
@@ -1656,20 +1870,22 @@ extension ReaderViewController {
     }
 
     @objc func moveLeft() {
-        guard !speechController.isActive else { return }
+        guard !speechController.isActive, !isAutoReadingActive else { return }
         reader?.moveLeft()
     }
 
     @objc func moveRight() {
-        guard !speechController.isActive else { return }
+        guard !speechController.isActive, !isAutoReadingActive else { return }
         reader?.moveRight()
     }
 
     @objc func toggleOffset() {
+        guard !isAutoReadingActive else { return }
         reader?.toggleOffset()
     }
 
     @objc func nextChapter() {
+        guard !isAutoReadingActive else { return }
         if let nextChapter = getNextChapter() {
             reader?.setChapter(nextChapter, startPage: 1)
             setChapter(nextChapter)
@@ -1677,6 +1893,7 @@ extension ReaderViewController {
     }
 
     @objc func previousChapter() {
+        guard !isAutoReadingActive else { return }
         if let previousChaoter = getPreviousChapter() {
             reader?.setChapter(previousChaoter, startPage: 1)
             setChapter(previousChaoter)

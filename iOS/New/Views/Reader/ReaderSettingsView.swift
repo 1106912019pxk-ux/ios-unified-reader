@@ -204,10 +204,61 @@ struct TextReaderFontSettingView: View {
     }
 }
 
+private struct ReaderAutoReadingSettingView: View {
+    @AppStorage("Reader.autoReadingSpeed") private var speed = 1.0
+    let onStart: (Double) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        HStack {
+            Text(textReaderLocalized("AUTO_READING_SPEED", fallback: "Auto Reading Speed"))
+            Spacer()
+            Button {
+                changeSpeed(by: -0.25)
+            } label: {
+                Image(systemName: "minus").frame(width: 32, height: 32)
+            }
+            .buttonStyle(.borderless)
+            .disabled(speed <= 0.5)
+
+            Text(String(format: "%.2f×", speed))
+                .monospacedDigit()
+                .frame(minWidth: 54)
+
+            Button {
+                changeSpeed(by: 0.25)
+            } label: {
+                Image(systemName: "plus").frame(width: 32, height: 32)
+            }
+            .buttonStyle(.borderless)
+            .disabled(speed >= 4)
+        }
+
+        Button {
+            let selectedSpeed = speed
+            dismiss()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                onStart(selectedSpeed)
+            }
+        } label: {
+            Label(
+                textReaderLocalized("AUTO_READING_START", fallback: "Start Auto Reading"),
+                systemImage: "play.fill"
+            )
+        }
+    }
+
+    private func changeSpeed(by amount: Double) {
+        speed = min(4, max(0.5, ((speed + amount) * 4).rounded() / 4))
+    }
+}
+
 struct ReaderSettingsView: View {
     let mangaId: MangaIdentifier
     let reader: ReaderViewController.Reader
     let chapterLanguage: String?
+    let onStartAutoReading: (Double) -> Void
 
     private let sourceLanguageCodes: [String]
     private let sourceLanguageTitles: [String]
@@ -225,10 +276,16 @@ struct ReaderSettingsView: View {
 
     @Environment(\.dismiss) private var dismiss
 
-    init(mangaId: MangaIdentifier, reader: ReaderViewController.Reader, chapterLanguage: String?) {
+    init(
+        mangaId: MangaIdentifier,
+        reader: ReaderViewController.Reader,
+        chapterLanguage: String?,
+        onStartAutoReading: @escaping (Double) -> Void
+    ) {
         self.mangaId = mangaId
         self.reader = reader
         self.chapterLanguage = chapterLanguage
+        self.onStartAutoReading = onStartAutoReading
 
         var languageCodes = Array(SourceManager.shared.sourceLanguages)
         // sort alphabetically
@@ -405,6 +462,10 @@ struct ReaderSettingsView: View {
                             )
                         )
                     }
+                }
+
+                Section(textReaderLocalized("AUTO_READING", fallback: "Auto Reading")) {
+                    ReaderAutoReadingSettingView(onStart: onStartAutoReading)
                 }
 
                 if #available(iOS 18.0, *), reader != .text {

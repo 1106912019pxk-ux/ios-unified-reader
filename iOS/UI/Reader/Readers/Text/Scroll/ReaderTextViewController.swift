@@ -9,6 +9,18 @@ import AidokuRunner
 import SwiftUI
 import ZIPFoundation
 
+private final class ReaderTextAutoScrollDisplayLinkProxy {
+    weak var owner: ReaderTextViewController?
+
+    init(owner: ReaderTextViewController) {
+        self.owner = owner
+    }
+
+    @objc func step(_ displayLink: CADisplayLink) {
+        owner?.handleAutoScrollFrame(displayLink)
+    }
+}
+
 class ReaderTextViewController: BaseViewController {
     let viewModel: ReaderTextViewModel
 
@@ -48,6 +60,13 @@ class ReaderTextViewController: BaseViewController {
     private var isReportingProgress = false
     private var lastReportedPage = 0
     private var needsPageCountUpdate = false
+
+    private let autoScrollBasePointsPerSecond: CGFloat = 28
+    private var autoScrollDisplayLink: CADisplayLink?
+    private var autoScrollDisplayLinkProxy: ReaderTextAutoScrollDisplayLinkProxy?
+    private var autoScrollLastTimestamp: CFTimeInterval = 0
+    private var autoScrollSpeed = 1.0
+    var autoScrollingDidReachEnd: (() -> Void)?
 
     /// Tracks the last known safe area insets so we can compensate content offset
     /// when bars show/hide with `contentInsetAdjustmentBehavior = .never`.
@@ -160,6 +179,10 @@ class ReaderTextViewController: BaseViewController {
     init(source: AidokuRunner.Source?, manga: AidokuRunner.Manga) {
         self.viewModel = .init(source: source, manga: manga)
         super.init()
+    }
+
+    deinit {
+        autoScrollDisplayLink?.invalidate()
     }
 
     // MARK: - Helpers
@@ -840,6 +863,68 @@ extension ReaderTextViewController: ReaderReaderDelegate {
 
         Task {
             await loadInitialChapter(chapter, restorePosition: startPage > 0)
+        }
+    }
+}
+
+// MARK: - Auto Reading
+
+extension ReaderTextViewController: ReaderAutoScrolling {
+    func startAutoScrolling(speed: Double) {
+        autoScrollSpeed = min(4, max(0.5, speed))
+        scrollView.isScrollEnabled = false
+        guard autoScrollDisplayLink == nil else { return }
+        let proxy = ReaderTextAutoScrollDisplayLinkProxy(owner: self)
+        let displayLink = CADisplayLink(target: proxy, selector: #selector(ReaderTextAutoScrollDisplayLinkProxy.step(_:)))
+        displayLink.add(to: .main, forMode: .common)
+        autoScrollDisplayLinkProxy = proxy
+        autoScrollDisplayLink = displayLink
+        autoScrollLastTimestamp = 0
+    }
+
+    func updateAutoScrollingSpeed(_ speed: Double) {
+        autoScrollSpeed = min(4, max(0.5, speed))
+        autoScrollLastTimestamp = 0
+    }
+
+    func stopAutoScrolling() {
+        pauseAutoScrolling()
+        scrollView.isScrollEnabled = true
+    }
+
+    func pauseAutoScrolling() {
+        autoScrollDisplayLink?.invalidate()
+        autoScrollDisplayLink = nil
+        autoScrollDisplayLinkProxy = nil
+        autoScrollLastTimestamp = 0
+    }
+
+    fileprivate func handleAutoScrollFrame(_ displayLink: CADisplayLink) {
+        guard !isSliding, !pendingScrollRestore else {
+            autoScrollLastTimestamp = displayLink.timestamp
+            return
+        }
+        guard autoScrollLastTimestamp > 0 else {
+            autoScrollLastTimestamp = displayLink.timestamp
+            return
+        }
+        let elapsed = min(0.1, displayLink.timestamp - autoScrollLastTimestamp)
+        autoScrollLastTimestamp = displayLink.timestamp
+
+        checkInfiniteLoad()
+        let minimumOffset = -scrollView.adjustedContentInset.top
+        let maximumOffset = max(
+            minimumOffset,
+            scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom
+        )
+        guard maximumOffset > minimumOffset else { return }
+        let distance = autoScrollBasePointsPerSecond * CGFloat(autoScrollSpeed) * CGFloat(elapsed)
+        let target = min(maximumOffset, scrollView.contentOffset.y + distance)
+        scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: target), animated: false)
+
+        if target >= maximumOffset - 0.5, nextChapter == nil, !loadingNext {
+            stopAutoScrolling()
+            autoScrollingDidReachEnd?()
         }
     }
 }

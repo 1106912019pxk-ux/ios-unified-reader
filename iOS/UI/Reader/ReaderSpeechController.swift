@@ -422,6 +422,7 @@ final class ReaderSpeechController: NSObject, ObservableObject {
             engine = try settings.makeEngine()
         } catch {
             state = .failed(error.localizedDescription)
+            clearRemoteControls()
             return
         }
         let cacheKey = "\(engine.cacheIdentifier)|\(speaker)|\(rate)|\(unit.text)"
@@ -457,6 +458,7 @@ final class ReaderSpeechController: NSObject, ObservableObject {
                 endBackgroundTask()
                 state = .failed(error.localizedDescription)
                 player = nil
+                clearRemoteControls()
                 try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
             }
         }
@@ -769,6 +771,8 @@ extension ReaderSpeechController: AVAudioPlayerDelegate {
                 advance()
             } else {
                 state = .failed(ReaderSpeechError.playbackFailed.localizedDescription)
+                clearRemoteControls()
+                try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
             }
         }
     }

@@ -215,7 +215,7 @@ private struct ReaderAutoReadingSettingView: View {
             Text(textReaderLocalized("AUTO_READING_SPEED", fallback: "Auto Reading Speed"))
             Spacer()
             Button {
-                changeSpeed(by: -0.25)
+                changeSpeed(direction: -1)
             } label: {
                 Image(systemName: "minus").frame(width: 32, height: 32)
             }
@@ -227,12 +227,12 @@ private struct ReaderAutoReadingSettingView: View {
                 .frame(minWidth: 54)
 
             Button {
-                changeSpeed(by: 0.25)
+                changeSpeed(direction: 1)
             } label: {
                 Image(systemName: "plus").frame(width: 32, height: 32)
             }
             .buttonStyle(.borderless)
-            .disabled(speed >= 4)
+            .disabled(speed >= 8)
         }
 
         Button {
@@ -249,8 +249,16 @@ private struct ReaderAutoReadingSettingView: View {
         }
     }
 
-    private func changeSpeed(by amount: Double) {
-        speed = min(4, max(0.5, ((speed + amount) * 4).rounded() / 4))
+    private func changeSpeed(direction: Double) {
+        let thresholdSpeed = direction < 0 ? speed - 0.001 : speed
+        let step: Double = if thresholdSpeed >= 4 {
+            1
+        } else if thresholdSpeed >= 2 {
+            0.5
+        } else {
+            0.25
+        }
+        speed = min(8, max(0.5, ((speed + step * direction) * 4).rounded() / 4))
     }
 }
 

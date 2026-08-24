@@ -871,7 +871,7 @@ extension ReaderTextViewController: ReaderReaderDelegate {
 
 extension ReaderTextViewController: ReaderAutoScrolling {
     func startAutoScrolling(speed: Double) {
-        autoScrollSpeed = min(4, max(0.5, speed))
+        autoScrollSpeed = min(8, max(0.5, speed))
         scrollView.isScrollEnabled = false
         guard autoScrollDisplayLink == nil else { return }
         let proxy = ReaderTextAutoScrollDisplayLinkProxy(owner: self)
@@ -883,7 +883,7 @@ extension ReaderTextViewController: ReaderAutoScrolling {
     }
 
     func updateAutoScrollingSpeed(_ speed: Double) {
-        autoScrollSpeed = min(4, max(0.5, speed))
+        autoScrollSpeed = min(8, max(0.5, speed))
         autoScrollLastTimestamp = 0
     }
 

@@ -129,10 +129,10 @@ class ReaderToolbarView: UIView {
 
     func setAutoReading(active: Bool, speed: Double) {
         autoReadingActive = active
-        autoReadingSpeed = min(4, max(0.5, speed))
+        autoReadingSpeed = min(8, max(0.5, speed))
         autoReadingSpeedLabel.text = String(format: "%.2f×", autoReadingSpeed)
         autoReadingDecreaseButton.isEnabled = autoReadingSpeed > 0.5
-        autoReadingIncreaseButton.isEnabled = autoReadingSpeed < 4
+        autoReadingIncreaseButton.isEnabled = autoReadingSpeed < 8
         autoReadingStack.isHidden = !active
         sliderView.isHidden = active
         incognitoModeLabel.isHidden = active || !UserDefaults.standard.bool(forKey: "General.incognitoMode")
@@ -141,15 +141,23 @@ class ReaderToolbarView: UIView {
     }
 
     @objc private func decreaseAutoReadingSpeed() {
-        changeAutoReadingSpeed(by: -0.25)
+        changeAutoReadingSpeed(direction: -1)
     }
 
     @objc private func increaseAutoReadingSpeed() {
-        changeAutoReadingSpeed(by: 0.25)
+        changeAutoReadingSpeed(direction: 1)
     }
 
-    private func changeAutoReadingSpeed(by amount: Double) {
-        let speed = min(4, max(0.5, ((autoReadingSpeed + amount) * 4).rounded() / 4))
+    private func changeAutoReadingSpeed(direction: Double) {
+        let thresholdSpeed = direction < 0 ? autoReadingSpeed - 0.001 : autoReadingSpeed
+        let step: Double = if thresholdSpeed >= 4 {
+            1
+        } else if thresholdSpeed >= 2 {
+            0.5
+        } else {
+            0.25
+        }
+        let speed = min(8, max(0.5, ((autoReadingSpeed + step * direction) * 4).rounded() / 4))
         setAutoReading(active: true, speed: speed)
         onAutoReadingSpeedChange?(speed)
     }

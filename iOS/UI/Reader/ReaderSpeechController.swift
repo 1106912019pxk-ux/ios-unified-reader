@@ -84,14 +84,26 @@ enum ReaderSpeechTextExtractor {
 
 enum MicrosoftSpeechVoice: String, CaseIterable, Identifiable, Sendable {
     case xiaoxiao = "zh-CN-XiaoxiaoNeural"
+    case xiaoyi = "zh-CN-XiaoyiNeural"
+    case xiaochen = "zh-CN-XiaochenNeural"
+    case xiaohan = "zh-CN-XiaohanNeural"
     case yunxi = "zh-CN-YunxiNeural"
+    case yunjian = "zh-CN-YunjianNeural"
+    case yunyang = "zh-CN-YunyangNeural"
+    case yunye = "zh-CN-YunyeNeural"
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
             case .xiaoxiao: readerSpeechLocalized("MICROSOFT_TTS_XIAOXIAO", fallback: "晓晓（女声）")
+            case .xiaoyi: readerSpeechLocalized("MICROSOFT_TTS_XIAOYI", fallback: "晓伊（女声）")
+            case .xiaochen: readerSpeechLocalized("MICROSOFT_TTS_XIAOCHEN", fallback: "晓辰（女声）")
+            case .xiaohan: readerSpeechLocalized("MICROSOFT_TTS_XIAOHAN", fallback: "晓涵（女声）")
             case .yunxi: readerSpeechLocalized("MICROSOFT_TTS_YUNXI", fallback: "云希（男声）")
+            case .yunjian: readerSpeechLocalized("MICROSOFT_TTS_YUNJIAN", fallback: "云健（男声）")
+            case .yunyang: readerSpeechLocalized("MICROSOFT_TTS_YUNYANG", fallback: "云扬（男声）")
+            case .yunye: readerSpeechLocalized("MICROSOFT_TTS_YUNYE", fallback: "云野（男声）")
         }
     }
 }
@@ -188,9 +200,12 @@ final class ReaderSpeechController: NSObject, ObservableObject {
 
     private struct SpeechUnit {
         let segment: ReaderSpeechSegment
-        let chunkIndex: Int
-        let chunkCount: Int
         let text: String
+    }
+
+    private struct PrefetchedAudio {
+        let cacheKey: String
+        let data: Data
     }
 
     private var units: [SpeechUnit] = []
@@ -198,8 +213,11 @@ final class ReaderSpeechController: NSObject, ObservableObject {
     private var player: AVAudioPlayer?
     private var synthesisTask: Task<Void, Never>?
     private var prefetchTask: Task<Void, Never>?
-    private var prefetchedAudio: [Int: Data] = [:]
+    private var prefetchedAudio: [Int: PrefetchedAudio] = [:]
     private var audioCache: [String: Data] = [:]
+
+    private static let speechUnitCharacterLimit = 420
+    private static let prefetchUnitCount = 3
 
     var isActive: Bool {
         switch state {
@@ -229,17 +247,65 @@ final class ReaderSpeechController: NSObject, ObservableObject {
     }
 
     private static func speechUnits(from segments: [ReaderSpeechSegment]) -> [SpeechUnit] {
-        segments.flatMap { segment in
-            let chunks = Self.chunks(from: segment.text)
-            return chunks.enumerated().map { index, chunk in
-                SpeechUnit(
-                    segment: segment,
-                    chunkIndex: index,
-                    chunkCount: chunks.count,
-                    text: chunk
-                )
+        let fragments = segments.compactMap { segment -> (ReaderSpeechSegment, String)? in
+            let text = normalizedSpeechText(from: segment.text)
+            return text.isEmpty ? nil : (segment, text)
+        }
+        guard !fragments.isEmpty else { return [] }
+
+        var combined = ""
+        var anchors: [(offset: Int, segment: ReaderSpeechSegment)] = []
+        for (segment, text) in fragments {
+            if !combined.isEmpty {
+                combined += boundarySeparator(previous: combined, next: text)
+            }
+            anchors.append((combined.count, segment))
+            combined += text
+        }
+
+        var sentences: [(segment: ReaderSpeechSegment, text: String)] = []
+        combined.enumerateSubstrings(
+            in: combined.startIndex..<combined.endIndex,
+            options: [.bySentences, .substringNotRequired]
+        ) { _, range, _, _ in
+            let text = String(combined[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return }
+            let offset = combined.distance(from: combined.startIndex, to: range.lowerBound)
+            let segment = anchors.last(where: { $0.offset <= offset })?.segment ?? fragments[0].0
+            sentences.append((segment, text))
+        }
+        if sentences.isEmpty {
+            sentences = [(fragments[0].0, combined)]
+        }
+
+        var units: [SpeechUnit] = []
+        var currentSegment: ReaderSpeechSegment?
+        var currentText = ""
+
+        func flushCurrentUnit() {
+            guard let currentSegment, !currentText.isEmpty else { return }
+            units.append(SpeechUnit(segment: currentSegment, text: currentText))
+            currentText = ""
+        }
+
+        for sentence in sentences {
+            for piece in splitLongText(sentence.text, limit: speechUnitCharacterLimit) {
+                if currentText.isEmpty {
+                    currentSegment = sentence.segment
+                    currentText = piece
+                } else if
+                    currentSegment?.id != sentence.segment.id
+                        || currentText.count + piece.count + 1 > speechUnitCharacterLimit {
+                    flushCurrentUnit()
+                    currentSegment = sentence.segment
+                    currentText = piece
+                } else {
+                    currentText += " " + piece
+                }
             }
         }
+        flushCurrentUnit()
+        return units
     }
 
     func pause() {
@@ -322,8 +388,10 @@ final class ReaderSpeechController: NSObject, ObservableObject {
             guard let self else { return }
             do {
                 let data: Data
-                if let prefetched = prefetchedAudio.removeValue(forKey: unitIndex) {
-                    data = prefetched
+                if
+                    let prefetched = prefetchedAudio.removeValue(forKey: unitIndex),
+                    prefetched.cacheKey == cacheKey {
+                    data = prefetched.data
                 } else if let cached = audioCache[cacheKey] {
                     data = cached
                 } else {
@@ -335,7 +403,7 @@ final class ReaderSpeechController: NSObject, ObservableObject {
                 }
                 guard !Task.isCancelled else { return }
                 try beginPlayback(data: data)
-                prefetchNextUnit(after: unitIndex, settings: settings)
+                prefetchUpcomingUnits(after: unitIndex, settings: settings)
             } catch is CancellationError {
                 return
             } catch {
@@ -398,39 +466,49 @@ final class ReaderSpeechController: NSObject, ObservableObject {
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
-    private func prefetchNextUnit(after currentIndex: Int, settings: ReaderSpeechSettingsStore) {
-        let nextIndex = currentIndex + 1
-        guard units.indices.contains(nextIndex), prefetchedAudio[nextIndex] == nil else { return }
-        let unit = units[nextIndex]
+    private func prefetchUpcomingUnits(after currentIndex: Int, settings: ReaderSpeechSettingsStore) {
+        let lastIndex = min(units.count - 1, currentIndex + Self.prefetchUnitCount)
+        guard currentIndex < lastIndex else { return }
+        let indices = Array((currentIndex + 1)...lastIndex)
         let rate = settings.rate
         let speaker = settings.speaker
         guard let engine = try? settings.makeEngine() else { return }
-        let cacheKey = "\(engine.cacheIdentifier)|\(speaker)|\(rate)|\(unit.text)"
 
         prefetchTask?.cancel()
         prefetchTask = Task { [weak self] in
             guard let self else { return }
-            do {
-                let data: Data
-                if let cached = audioCache[cacheKey] {
-                    data = cached
-                } else {
-                    data = try await engine.synthesize(.init(text: unit.text, rate: rate, speaker: speaker))
-                    guard !Task.isCancelled else { return }
-                    audioCache[cacheKey] = data
+            for nextIndex in indices {
+                guard !Task.isCancelled, units.indices.contains(nextIndex) else { return }
+                let unit = units[nextIndex]
+                let cacheKey = "\(engine.cacheIdentifier)|\(speaker)|\(rate)|\(unit.text)"
+                if prefetchedAudio[nextIndex]?.cacheKey == cacheKey { continue }
+
+                do {
+                    let data: Data
+                    if let cached = audioCache[cacheKey] {
+                        data = cached
+                    } else {
+                        data = try await engine.synthesize(.init(text: unit.text, rate: rate, speaker: speaker))
+                        guard !Task.isCancelled else { return }
+                        audioCache[cacheKey] = data
+                    }
+                    guard
+                        !Task.isCancelled,
+                        units.indices.contains(nextIndex),
+                        units[nextIndex].text == unit.text
+                    else {
+                        return
+                    }
+                    prefetchedAudio[nextIndex] = PrefetchedAudio(cacheKey: cacheKey, data: data)
+                } catch {
+                    // Prefetch is an optimization only. Normal playback will retry
+                    // synthesis and surface an error if it also fails.
                 }
-                guard !Task.isCancelled, units.indices.contains(nextIndex), units[nextIndex].text == unit.text else {
-                    return
-                }
-                prefetchedAudio[nextIndex] = data
-            } catch {
-                // Prefetch is an optimization only. Normal playback will retry
-                // synthesis and surface an error if it also fails.
             }
         }
     }
 
-    private static func chunks(from markdown: String, limit: Int = 420) -> [String] {
+    private static func normalizedSpeechText(from markdown: String) -> String {
         let plainText: String
         if let attributed = try? AttributedString(
             markdown: markdown,
@@ -450,40 +528,31 @@ final class ReaderSpeechController: NSObject, ObservableObject {
             .replacingOccurrences(of: "\u{FFFC}", with: " ")
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty else { return [] }
+        return normalized
+    }
 
-        var sentences: [String] = []
-        normalized.enumerateSubstrings(
-            in: normalized.startIndex..<normalized.endIndex,
-            options: [.bySentences, .substringNotRequired]
-        ) { _, range, _, _ in
-            let sentence = String(normalized[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-            if !sentence.isEmpty { sentences.append(sentence) }
+    private static func boundarySeparator(previous: String, next: String) -> String {
+        guard let previousCharacter = previous.last, let nextCharacter = next.first else { return "" }
+        return isASCIIAlphaNumeric(previousCharacter) && isASCIIAlphaNumeric(nextCharacter) ? " " : ""
+    }
+
+    private static func isASCIIAlphaNumeric(_ character: Character) -> Bool {
+        guard character.unicodeScalars.count == 1, let scalar = character.unicodeScalars.first else {
+            return false
         }
-        if sentences.isEmpty { sentences = [normalized] }
+        let value = scalar.value
+        return (48...57).contains(value) || (65...90).contains(value) || (97...122).contains(value)
+    }
 
+    private static func splitLongText(_ text: String, limit: Int) -> [String] {
+        guard text.count > limit else { return [text] }
         var result: [String] = []
-        var current = ""
-        for sentence in sentences {
-            if sentence.count > limit {
-                if !current.isEmpty {
-                    result.append(current)
-                    current = ""
-                }
-                var remainder = sentence[...]
-                while !remainder.isEmpty {
-                    let end = remainder.index(remainder.startIndex, offsetBy: min(limit, remainder.count))
-                    result.append(String(remainder[..<end]))
-                    remainder = remainder[end...]
-                }
-            } else if current.count + sentence.count + 1 <= limit {
-                current += current.isEmpty ? sentence : " \(sentence)"
-            } else {
-                result.append(current)
-                current = sentence
-            }
+        var remainder = text[...]
+        while !remainder.isEmpty {
+            let end = remainder.index(remainder.startIndex, offsetBy: min(limit, remainder.count))
+            result.append(String(remainder[..<end]))
+            remainder = remainder[end...]
         }
-        if !current.isEmpty { result.append(current) }
         return result
     }
 }

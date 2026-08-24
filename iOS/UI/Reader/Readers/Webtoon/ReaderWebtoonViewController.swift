@@ -285,7 +285,7 @@ extension ReaderWebtoonViewController {
 
 extension ReaderWebtoonViewController: ReaderAutoScrolling {
     func startAutoScrolling(speed: Double) {
-        autoScrollSpeed = min(4, max(0.5, speed))
+        autoScrollSpeed = min(8, max(0.5, speed))
         scrollView.isScrollEnabled = false
         collectionNode.view.isScrollEnabled = false
         guard autoScrollDisplayLink == nil else { return }
@@ -298,7 +298,7 @@ extension ReaderWebtoonViewController: ReaderAutoScrolling {
     }
 
     func updateAutoScrollingSpeed(_ speed: Double) {
-        autoScrollSpeed = min(4, max(0.5, speed))
+        autoScrollSpeed = min(8, max(0.5, speed))
         autoScrollLastTimestamp = 0
     }
 

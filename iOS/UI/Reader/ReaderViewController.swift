@@ -64,10 +64,10 @@ class ReaderViewController: BaseObservingViewController {
     private var autoReadingSpeed: Double {
         get {
             let value = UserDefaults.standard.object(forKey: "Reader.autoReadingSpeed") as? Double ?? 1
-            return min(4, max(0.5, value))
+            return min(8, max(0.5, value))
         }
         set {
-            UserDefaults.standard.set(min(4, max(0.5, newValue)), forKey: "Reader.autoReadingSpeed")
+            UserDefaults.standard.set(min(8, max(0.5, newValue)), forKey: "Reader.autoReadingSpeed")
         }
     }
     private var temporaryTextReaderStyle: String?
@@ -108,7 +108,7 @@ class ReaderViewController: BaseObservingViewController {
         return item
     }()
     private lazy var readerSettingsButton = UIBarButtonItem(
-        image: UIImage(systemName: "textformat.size"),
+        image: UIImage(systemName: "slider.horizontal.3"),
         style: .plain,
         target: self,
         action: #selector(openReaderSettings)

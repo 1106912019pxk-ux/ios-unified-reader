@@ -396,7 +396,7 @@
 "LOCAL_FILES_SETUP" = "本地来源设置";
 "IMPORT_FILE" = "导入文件";
 "LOCAL_FILE_IMPORT" = "本地文件导入";
-"LOCAL_FILE_IMPORT_TEXT" = "导入包含图片的CBZ或ZIP文件进行阅读。";
+"LOCAL_FILE_IMPORT_TEXT" = "导入 CBZ、EPUB、TXT 或 ZIP 文件进行阅读。";
 "CHAPTER_TITLE" = "章节标题";
 "SERIES_TITLE" = "系列标题";
 "DESCRIPTION" = "简介";
@@ -474,7 +474,22 @@
 "LOGOUT_CONFIRM" = "你确定要注销吗？";
 "RECENTLY_READ_BOOKS" = "最近阅读图书";
 "LOGIN_BASIC_TEXT" = "输入的任何凭据都将直接提供给来源。请勿登录你不信任的任何来源。";
-"FILE_IMPORT_FAIL_TEXT" = "文件导入失败。请确保该文件是包含图片的有效 CBZ 或 ZIP 存档文件。";
+"FILE_IMPORT_FAIL_TEXT" = "文件导入失败。请确保它是有效的 CBZ、EPUB、TXT 或 ZIP 文件。";
+
+"TXT_NAME" = "TXT";
+"TXT_ENCODING" = "文字编码";
+"TXT_AUTO_CHAPTERS" = "自动识别章节";
+"TXT_CUSTOM_CHAPTER_RULE" = "使用自定义分章规则";
+"TXT_CHAPTER_REGEX" = "章节标题正则表达式";
+"TXT_UPDATE_PREVIEW" = "更新预览";
+"TXT_CHAPTER_PREVIEW" = "章节预览";
+"TXT_MORE_CHAPTERS" = "……以及另外 %i 章";
+"TXT_INVALID_REGEX" = "自定义分章规则不是有效的正则表达式。";
+"TXT_EMPTY_REGEX" = "请输入自定义分章规则的正则表达式。";
+"TXT_TOO_MANY_CHAPTERS" = "分章规则匹配了过多行，请使用更具体的规则。";
+"TXT_DECODE_FAILED" = "无法使用此编码解析文本。";
+"TXT_PREFACE" = "序章";
+"TXT_BODY" = "正文";
 "UNAVAILABLE_SOURCE_LISTS_TEXT" = "获取上述图源列表时发生错误。";
 "SOURCE_BREAKING_CHANGE" = "图源重大变更";
 "SOURCE_BREAKING_CHANGE_TEXT" = "此图源发生了重大变更，需要迁移才能保留您的书库和阅读历史。";

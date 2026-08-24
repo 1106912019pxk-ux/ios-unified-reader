@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct LocalFileImportView: View {
@@ -49,6 +50,15 @@ extension LocalFileImportView {
         @State private var coverImage: PlatformImage?
         @State private var seriesName: String = ""
         @State private var seriesDescription: String = ""
+        @State private var seriesAuthor: String = ""
+
+        @State private var txtEncoding: TxtEncoding = .utf8
+        @State private var txtSplitsChapters = true
+        @State private var txtUsesCustomRule = false
+        @State private var txtCustomPattern = ""
+        @State private var txtAnalysis: TxtAnalysis?
+        @State private var txtAnalysisError: String?
+        @State private var txtAnalyzing = false
 
         @State private var selectedMangaId: String = ""
         @State private var selectedMangaTitle: String = ""
@@ -122,7 +132,7 @@ extension LocalFileImportView.ContentView {
                                 Text(NSLocalizedString("IMPORT")).bold()
                             }
                         }
-                        .disabled(!volumeChapterValid || volumeChapterEmpty)
+                        .disabled(!canProceed)
                     }
                 }
             }
@@ -134,7 +144,12 @@ extension LocalFileImportView.ContentView {
             }
             .sheet(isPresented: $importing) {
                 DocumentPickerView(
-                    allowedContentTypes: [.init(filenameExtension: "cbz")!, .zip, .epub],
+                    allowedContentTypes: [
+                        .init(filenameExtension: "cbz")!,
+                        .zip,
+                        .epub,
+                        .init(filenameExtension: "txt")!
+                    ],
                     onDocumentsPicked: { urls in
                         guard let url = urls.first else {
                             loadingImport = false
@@ -236,7 +251,7 @@ extension LocalFileImportView.ContentView {
                     .lineLimit(4)
                     .padding(.horizontal, 20)
                 Text({
-                    let pagesText = if fileInfo.fileType == .epub {
+                    let pagesText = if fileInfo.fileType == .epub || fileInfo.fileType == .txt {
                         if fileInfo.pageCount == 1 {
                             NSLocalizedString("1_CHAPTER")
                         } else {
@@ -259,8 +274,12 @@ extension LocalFileImportView.ContentView {
 
             // fields
             VStack(spacing: interItemSpacing) {
+                if fileInfo.fileType == .txt {
+                    txtConfigurationView
+                }
+
                 // chapter fields don't apply to epubs, whose chapters come from the file itself
-                if fileInfo.fileType != .epub {
+                if fileInfo.fileType != .epub && fileInfo.fileType != .txt {
                     // name
                     VStack(alignment: .leading, spacing: 6) {
                         Text(NSLocalizedString("CHAPTER_TITLE")).fontWeight(.medium)
@@ -322,43 +341,45 @@ extension LocalFileImportView.ContentView {
                     }
                 }
 
-                // series select
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(NSLocalizedString("SERIES")).fontWeight(.medium)
+                if fileInfo.fileType != .txt {
+                    // series select
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(NSLocalizedString("SERIES")).fontWeight(.medium)
 
-                    NavigationLink {
-                        ListView(
-                            selectedMangaId: $selectedMangaId,
-                            selectedMangaTitle: $selectedMangaTitle
-                        )
-                    } label: {
-                        TextFieldWrapper {
-                            Text(selectedMangaTitle.isEmpty ? NSLocalizedString("NEW_SERIES") : selectedMangaTitle)
-                                .lineLimit(1)
-                            Spacer(minLength: 0)
-                            Image(systemName: "chevron.forward")
-                                .foregroundStyle(.secondary)
+                        NavigationLink {
+                            ListView(
+                                selectedMangaId: $selectedMangaId,
+                                selectedMangaTitle: $selectedMangaTitle
+                            )
+                        } label: {
+                            TextFieldWrapper {
+                                Text(selectedMangaTitle.isEmpty ? NSLocalizedString("NEW_SERIES") : selectedMangaTitle)
+                                    .lineLimit(1)
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.forward")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .foregroundStyle(.primary)
+
+                        if selectedMangaId.isEmpty {
+                            fieldTextView(NSLocalizedString("CREATE_NEW_SERIES_INFO"))
+                        } else {
+                            fieldTextView(NSLocalizedString("ADD_TO_OTHER_SERIES_INFO"))
                         }
                     }
-                    .foregroundStyle(.primary)
-
-                    if selectedMangaId.isEmpty {
-                        fieldTextView(NSLocalizedString("CREATE_NEW_SERIES_INFO"))
-                    } else {
-                        fieldTextView(NSLocalizedString("ADD_TO_OTHER_SERIES_INFO"))
-                    }
-                }
-                .onChange(of: selectedMangaId) { _ in
-                    validateSeriesName()
-                    Task {
-                        if !selectedMangaId.isEmpty {
-                            volume = nil
-                            chapter = await LocalFileDataManager.shared.getNextChapterNumber(series: selectedMangaId)
-                            validateVolumeChapter()
-                        } else {
-                            volume = nil
-                            chapter = 1
-                            volumeChapterValid = true
+                    .onChange(of: selectedMangaId) { _ in
+                        validateSeriesName()
+                        Task {
+                            if !selectedMangaId.isEmpty {
+                                volume = nil
+                                chapter = await LocalFileDataManager.shared.getNextChapterNumber(series: selectedMangaId)
+                                validateVolumeChapter()
+                            } else {
+                                volume = nil
+                                chapter = 1
+                                volumeChapterValid = true
+                            }
                         }
                     }
                 }
@@ -399,6 +420,13 @@ extension LocalFileImportView.ContentView {
 
 // MARK: Functions
 extension LocalFileImportView.ContentView {
+    var canProceed: Bool {
+        if fileInfo?.fileType == .txt {
+            return txtAnalysis != nil && txtAnalysisError == nil && !txtAnalyzing
+        }
+        return volumeChapterValid && !volumeChapterEmpty
+    }
+
     func loadFileInfoFields() {
         guard let fileInfo else { return }
         name = fileInfo.name.removingExtension()
@@ -408,6 +436,19 @@ extension LocalFileImportView.ContentView {
         }
         seriesDescription = fileInfo.comicInfo?.summary ?? ""
         coverImage = fileInfo.previewImages.first
+        if fileInfo.fileType == .txt {
+            txtAnalysis = fileInfo.txtAnalysis
+            txtEncoding = fileInfo.txtAnalysis?.encoding ?? .utf8
+            volume = nil
+            chapter = nil
+            volumeChapterEmpty = false
+            volumeChapterValid = true
+            selectedMangaId = ""
+            selectedMangaTitle = ""
+            if coverImage == nil {
+                coverImage = generateTxtCover(title: seriesName)
+            }
+        }
         volume = fileInfo.comicInfo?.volume.flatMap { Float($0) }
             ?? LocalFileNameParser.getMangaVolumeNumber(from: fileInfo.name)
         chapter = fileInfo.comicInfo?.number.flatMap { Float($0) }
@@ -417,7 +458,7 @@ extension LocalFileImportView.ContentView {
             let hasSeries = await LocalFileDataManager.shared.hasSeries(id: seriesName.percentEncoded())
             nameEmpty = selectedMangaId.isEmpty ? seriesName.isEmpty : false
             nameValid = !hasSeries
-            if hasSeries {
+            if hasSeries, fileInfo.fileType != .txt {
                 selectedMangaId = seriesName
                 selectedMangaTitle = seriesName
             }
@@ -464,15 +505,176 @@ extension LocalFileImportView.ContentView {
                 mangaCoverImage: selectedMangaId.isEmpty ? coverImage : nil,
                 mangaName: selectedMangaId.isEmpty ? seriesName : nil,
                 mangaDescription: selectedMangaId.isEmpty ? seriesDescription : nil,
+                mangaAuthor: selectedMangaId.isEmpty ? seriesAuthor : nil,
                 chapterName: name,
                 volume: volume,
-                chapter: chapter
+                chapter: chapter,
+                txtOptions: fileInfo.fileType == .txt ? currentTxtOptions : nil
             )
             NotificationCenter.default.post(name: .init("refresh-content"), object: nil)
             dismiss()
         } catch {
             LogManager.logger.error("Unable import file: \(error)")
             showImportFailAlert = true
+        }
+    }
+}
+
+// MARK: TXT Import
+extension LocalFileImportView.ContentView {
+    var currentTxtOptions: TxtImportOptions {
+        TxtImportOptions(
+            encoding: txtEncoding,
+            splitsChapters: txtSplitsChapters,
+            customChapterPattern: txtUsesCustomRule ? txtCustomPattern : nil
+        )
+    }
+
+    var txtConfigurationView: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(NSLocalizedString("TXT_ENCODING")).fontWeight(.medium)
+                Picker(NSLocalizedString("TXT_ENCODING"), selection: $txtEncoding) {
+                    ForEach(TxtEncoding.allCases) { encoding in
+                        Text(encoding.localizedName).tag(encoding)
+                    }
+                }
+                .pickerStyle(.menu)
+                .onChange(of: txtEncoding) { _ in
+                    reanalyzeTxt()
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Toggle(NSLocalizedString("TXT_AUTO_CHAPTERS"), isOn: $txtSplitsChapters)
+                    .onChange(of: txtSplitsChapters) { _ in
+                        reanalyzeTxt()
+                    }
+
+                if txtSplitsChapters {
+                    Toggle(NSLocalizedString("TXT_CUSTOM_CHAPTER_RULE"), isOn: $txtUsesCustomRule)
+                        .onChange(of: txtUsesCustomRule) { _ in
+                            reanalyzeTxt()
+                        }
+
+                    if txtUsesCustomRule {
+                        TextFieldWrapper(hasError: txtAnalysisError != nil) {
+                            TextField(NSLocalizedString("TXT_CHAPTER_REGEX"), text: $txtCustomPattern)
+                                .autocorrectionDisabled()
+                                .textInputAutocapitalization(.never)
+                        }
+                        Button(NSLocalizedString("TXT_UPDATE_PREVIEW")) {
+                            reanalyzeTxt()
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+
+                if let txtAnalysisError {
+                    fieldTextView(txtAnalysisError, error: true)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(NSLocalizedString("TXT_CHAPTER_PREVIEW")).fontWeight(.medium)
+                    Spacer()
+                    if txtAnalyzing {
+                        ProgressView().controlSize(.small)
+                    } else if let count = txtAnalysis?.index.chapters.count {
+                        Text(String(format: NSLocalizedString("%i_CHAPTERS"), count))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if let analysis = txtAnalysis {
+                    VStack(alignment: .leading, spacing: 7) {
+                        ForEach(Array(analysis.index.chapters.prefix(12).enumerated()), id: \.offset) { index, chapter in
+                            Text("\(index + 1). \(chapter.title)")
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        if analysis.index.chapters.count > 12 {
+                            Text(String(format: NSLocalizedString("TXT_MORE_CHAPTERS"), analysis.index.chapters.count - 12))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .font(.subheadline)
+                    .padding(12)
+                    .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+
+                    Text(analysis.preview)
+                        .font(.system(.footnote, design: .monospaced))
+                        .lineLimit(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                }
+            }
+        }
+    }
+
+    func reanalyzeTxt() {
+        guard let fileInfo, fileInfo.fileType == .txt else { return }
+        if txtUsesCustomRule, txtCustomPattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            txtAnalysis = nil
+            txtAnalysisError = NSLocalizedString("TXT_EMPTY_REGEX")
+            return
+        }
+        if txtUsesCustomRule, !txtCustomPattern.isEmpty, !TxtParser.validateChapterPattern(txtCustomPattern) {
+            txtAnalysis = nil
+            txtAnalysisError = NSLocalizedString("TXT_INVALID_REGEX")
+            return
+        }
+        txtAnalysisError = nil
+        txtAnalyzing = true
+        let url = fileInfo.url
+        let options = currentTxtOptions
+        Task {
+            do {
+                txtAnalysis = try await LocalFileManager.shared.analyzeTxt(url: url, options: options)
+                txtAnalysisError = nil
+            } catch TxtParserError.chapterLimitExceeded {
+                txtAnalysisError = NSLocalizedString("TXT_TOO_MANY_CHAPTERS")
+            } catch TxtParserError.invalidChapterPattern {
+                txtAnalysisError = NSLocalizedString("TXT_INVALID_REGEX")
+            } catch {
+                txtAnalysisError = NSLocalizedString("TXT_DECODE_FAILED")
+            }
+            txtAnalyzing = false
+        }
+    }
+
+    func generateTxtCover(title: String) -> PlatformImage {
+        let size = CGSize(width: 600, height: 900)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { context in
+            UIColor(red: 0.15, green: 0.20, blue: 0.34, alpha: 1).setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            UIColor(red: 0.31, green: 0.47, blue: 0.72, alpha: 1).setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 28, height: size.height))
+
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.alignment = .center
+            paragraph.lineBreakMode = .byWordWrapping
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: title.count > 24 ? 48 : 58, weight: .semibold),
+                .foregroundColor: UIColor.white,
+                .paragraphStyle: paragraph
+            ]
+            let rect = CGRect(x: 64, y: 250, width: 472, height: 400)
+            (title as NSString).draw(with: rect, options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attributes, context: nil)
+
+            let footer = NSLocalizedString("TXT_NAME") as NSString
+            footer.draw(
+                in: CGRect(x: 64, y: 790, width: 472, height: 60),
+                withAttributes: [
+                    .font: UIFont.systemFont(ofSize: 24, weight: .medium),
+                    .foregroundColor: UIColor.white.withAlphaComponent(0.7),
+                    .paragraphStyle: paragraph
+                ]
+            )
         }
     }
 }
@@ -524,6 +726,20 @@ extension LocalFileImportView.ContentView {
                 }
 
                 // description
+                if fileInfo?.fileType == .txt {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(NSLocalizedString("AUTHOR")).fontWeight(.medium)
+                        TextFieldWrapper {
+                            TextField(NSLocalizedString("AUTHOR"), text: $seriesAuthor)
+                                .autocorrectionDisabled()
+                            if !seriesAuthor.isEmpty {
+                                ClearFieldButton { seriesAuthor = "" }
+                            }
+                        }
+                    }
+                }
+
+                // description
                 VStack(alignment: .leading, spacing: 6) {
                     Text(NSLocalizedString("DESCRIPTION"))
                         .fontWeight(.medium)
@@ -564,7 +780,7 @@ extension LocalFileImportView.ContentView {
                 } label: {
                     Text(NSLocalizedString("IMPORT")).bold()
                 }
-                .disabled(!nameValid || !volumeChapterValid || nameEmpty || volumeChapterEmpty)
+                .disabled(!nameValid || nameEmpty || !canProceed)
             }
         }
         .navigationTitle(NSLocalizedString("NEW_SERIES"))

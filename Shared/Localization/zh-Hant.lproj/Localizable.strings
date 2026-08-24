@@ -766,3 +766,17 @@
 "MICROSOFT_TTS_CHAPTER_FINISHED" = "本章朗讀完成";
 "MICROSOFT_TTS_INVALID_RESPONSE" = "微軟語音傳回了無效音訊。";
 "MICROSOFT_TTS_PLAYBACK_FAILED" = "語音播放失敗。";
+"TXT_NAME" = "TXT";
+"TXT_ENCODING" = "文字編碼";
+"TXT_AUTO_CHAPTERS" = "自動識別章節";
+"TXT_CUSTOM_CHAPTER_RULE" = "使用自訂分章規則";
+"TXT_CHAPTER_REGEX" = "章節標題正規表示式";
+"TXT_UPDATE_PREVIEW" = "更新預覽";
+"TXT_CHAPTER_PREVIEW" = "章節預覽";
+"TXT_MORE_CHAPTERS" = "……以及另外 %i 章";
+"TXT_INVALID_REGEX" = "自訂分章規則不是有效的正規表示式。";
+"TXT_EMPTY_REGEX" = "請輸入自訂分章規則的正規表示式。";
+"TXT_TOO_MANY_CHAPTERS" = "分章規則匹配了過多行，請使用更具體的規則。";
+"TXT_DECODE_FAILED" = "無法使用此編碼解析文字。";
+"TXT_PREFACE" = "序章";
+"TXT_BODY" = "正文";

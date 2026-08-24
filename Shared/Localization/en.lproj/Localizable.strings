@@ -225,7 +225,7 @@
 "IMPORT" = "Import";
 "IMPORT_FILE" = "Import File";
 "LOCAL_FILE_IMPORT" = "Local File Import";
-"LOCAL_FILE_IMPORT_TEXT" = "Import a CBZ, ePub, or ZIP file containing images to read.";
+"LOCAL_FILE_IMPORT_TEXT" = "Import a CBZ, EPUB, TXT, or ZIP file to read.";
 "CHAPTER_TITLE" = "Chapter Title";
 "SERIES_TITLE" = "Series Title";
 "DESCRIPTION" = "Description";
@@ -666,7 +666,22 @@
 "IMPORT_FAIL" = "Import Failed";
 "BACKUP_IMPORT_FAIL_TEXT" = "Failed to save backup. Please ensure that your backup is in the proper format.";
 "SOURCE_IMPORT_FAIL_TEXT" = "Failed to import source. Please ensure that your aix file is valid.";
-"FILE_IMPORT_FAIL_TEXT" = "Failed to import file. Please ensure it is a valid CBZ or ZIP archive that contains images.";
+"FILE_IMPORT_FAIL_TEXT" = "Failed to import file. Please ensure it is a valid CBZ, EPUB, TXT, or ZIP file.";
+
+"TXT_NAME" = "TXT";
+"TXT_ENCODING" = "Text Encoding";
+"TXT_AUTO_CHAPTERS" = "Detect Chapters Automatically";
+"TXT_CUSTOM_CHAPTER_RULE" = "Use Custom Chapter Rule";
+"TXT_CHAPTER_REGEX" = "Chapter title regular expression";
+"TXT_UPDATE_PREVIEW" = "Update Preview";
+"TXT_CHAPTER_PREVIEW" = "Chapter Preview";
+"TXT_MORE_CHAPTERS" = "…and %i more chapters";
+"TXT_INVALID_REGEX" = "The custom chapter rule is not a valid regular expression.";
+"TXT_EMPTY_REGEX" = "Enter a regular expression for the custom chapter rule.";
+"TXT_TOO_MANY_CHAPTERS" = "The chapter rule matched too many lines. Please use a more specific rule.";
+"TXT_DECODE_FAILED" = "The text could not be decoded with this encoding.";
+"TXT_PREFACE" = "Preface";
+"TXT_BODY" = "Text";
 "BACKUP_%@" = "Backup %@";
 "EXPORT" = "Export";
 "RESTORE" = "Restore";

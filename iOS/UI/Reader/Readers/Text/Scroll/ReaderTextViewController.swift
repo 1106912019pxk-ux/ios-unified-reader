@@ -847,6 +847,10 @@ extension ReaderTextViewController: ReaderReaderDelegate {
 // MARK: - Microsoft Speech
 
 extension ReaderTextViewController: ReaderSpeechTextProviding {
+    func setSpeechNavigationLocked(_ locked: Bool) {
+        scrollView.isScrollEnabled = !locked
+    }
+
     func speechSegmentsFromCurrentPosition() -> [ReaderSpeechSegment] {
         guard let sectionIndex = currentSectionIndex else { return [] }
         let section = sections[sectionIndex]

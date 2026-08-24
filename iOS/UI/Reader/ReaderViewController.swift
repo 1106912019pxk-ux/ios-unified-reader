@@ -47,8 +47,6 @@ class ReaderViewController: BaseObservingViewController {
     private var sessionStartDate: Date?
     private var sessionLastInteraction: Date?
     private var speechInitiatedChapterChange = false
-    private var speechInitiatedPageChange = false
-    private var speechFollowsVisiblePage = true
     private var pendingSpeechSegment: ReaderSpeechSegment?
 
     weak var reader: ReaderReaderDelegate?
@@ -100,10 +98,12 @@ class ReaderViewController: BaseObservingViewController {
     private lazy var speechController: ReaderSpeechController = {
         let controller = ReaderSpeechController()
         controller.onStateChange = { [weak self] state in
-            self?.speechButton.image = UIImage(systemName: state == .playing ? "headphones.circle.fill" : "headphones")
-            if state == .idle {
-                self?.speechFollowsVisiblePage = true
+            let navigationLocked: Bool = switch state {
+                case .loading, .playing, .paused: true
+                case .idle, .failed: false
             }
+            self?.speechButton.image = UIImage(systemName: state == .playing ? "headphones.circle.fill" : "headphones")
+            self?.setSpeechNavigationLocked(navigationLocked)
             self?.updateReaderActionButtons()
         }
         controller.revealSegment = { [weak self] segment in
@@ -658,7 +658,6 @@ class ReaderViewController: BaseObservingViewController {
     }
 
     private func speechSegmentsFromCurrentPosition() async -> [ReaderSpeechSegment] {
-        speechFollowsVisiblePage = true
         let currentSegments = (reader as? ReaderSpeechTextProviding)?.speechSegmentsFromCurrentPosition() ?? []
         if !currentSegments.isEmpty || !isLocalEpubChapter {
             return currentSegments
@@ -696,11 +695,8 @@ class ReaderViewController: BaseObservingViewController {
     }
 
     private func revealSpeechSegment(_ segment: ReaderSpeechSegment) {
-        guard speechFollowsVisiblePage else { return }
         if segment.chapterKey == chapter.key {
-            speechInitiatedPageChange = true
             (reader as? ReaderSpeechTextProviding)?.revealSpeechSegment(segment)
-            speechInitiatedPageChange = false
             return
         }
         guard let target = chapterList.first(where: { $0.key == segment.chapterKey }) else { return }
@@ -718,16 +714,21 @@ class ReaderViewController: BaseObservingViewController {
             let provider = reader as? ReaderSpeechTextProviding
         else { return }
         pendingSpeechSegment = nil
-        speechInitiatedPageChange = true
         provider.revealSpeechSegment(segment)
-        speechInitiatedPageChange = false
     }
 
     @objc func sliderMoved(_ sender: ReaderSliderView) {
+        guard !speechController.isActive else { return }
         reader?.sliderMoved(value: sender.currentValue)
     }
     @objc func sliderStopped(_ sender: ReaderSliderView) {
+        guard !speechController.isActive else { return }
         reader?.sliderStopped(value: sender.currentValue)
+    }
+
+    private func setSpeechNavigationLocked(_ locked: Bool) {
+        (reader as? ReaderSpeechTextProviding)?.setSpeechNavigationLocked(locked)
+        toolbarView.sliderView.isEnabled = !locked
     }
 }
 
@@ -835,6 +836,7 @@ extension ReaderViewController {
             add(child: pageController, below: descriptionButtonController.view)
         }
         reader?.readingMode = readingMode
+        setSpeechNavigationLocked(speechController.isActive)
         updateReaderActionButtons()
         configureDictionaryOverlayInteractionMode()
         configureDictionaryOverlayTapHandler()
@@ -987,13 +989,6 @@ extension ReaderViewController: ReaderHoldingDelegate {
     private func setCurrentPages(_ pages: ClosedRange<Int>, position: Double? = nil) {
         guard let totalPages = toolbarView.totalPages else { return }
 
-        let requestedPage = max(1, min(pages.lowerBound, totalPages))
-        if speechController.isActive, !speechInitiatedPageChange, requestedPage != currentPage {
-            // Manual browsing is independent from speech playback. Once the user
-            // leaves the spoken page, keep reading without forcing the UI back.
-            speechFollowsVisiblePage = false
-        }
-
         updateDescriptionButton(pages: pages)
 
         sessionLastInteraction = Date.now
@@ -1002,7 +997,7 @@ extension ReaderViewController: ReaderHoldingDelegate {
             sessionReadPages.insert(page)
         }
 
-        let page = requestedPage
+        let page = max(1, min(pages.lowerBound, totalPages))
         currentPage = page
         currentPosition = position
         toolbarView.currentPage = page
@@ -1271,6 +1266,10 @@ extension ReaderViewController {
 
     @objc func handleTap(_ gestureRecognizer: UITapGestureRecognizer) {
         let point = gestureRecognizer.location(in: view)
+        if speechController.isActive {
+            toggleBarVisibility()
+            return
+        }
         let overlayModeEnabled = AppSettings.dictionary.textOverlayMode.get()
         let singleTapLookupEnabled = isDictionarySingleTapLookupActiveForCurrentChapter
         let singleTapOCRLookupEnabled = singleTapLookupEnabled && !overlayModeEnabled
@@ -1428,6 +1427,7 @@ extension ReaderViewController: UIPencilInteractionDelegate {
     }
 
     private func nextPage() {
+        guard !speechController.isActive else { return }
         switch readingMode {
             case .rtl: reader?.moveLeft()
             default: reader?.moveRight()
@@ -1435,6 +1435,7 @@ extension ReaderViewController: UIPencilInteractionDelegate {
     }
 
     private func previousPage() {
+        guard !speechController.isActive else { return }
         switch readingMode {
             case .rtl: reader?.moveRight()
             default: reader?.moveLeft()
@@ -1655,10 +1656,12 @@ extension ReaderViewController {
     }
 
     @objc func moveLeft() {
+        guard !speechController.isActive else { return }
         reader?.moveLeft()
     }
 
     @objc func moveRight() {
+        guard !speechController.isActive else { return }
         reader?.moveRight()
     }
 

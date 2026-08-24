@@ -24,6 +24,7 @@ struct ReaderSpeechSegment: Identifiable, Sendable {
 protocol ReaderSpeechTextProviding: AnyObject {
     func speechSegmentsFromCurrentPosition() -> [ReaderSpeechSegment]
     func revealSpeechSegment(_ segment: ReaderSpeechSegment)
+    func setSpeechNavigationLocked(_ locked: Bool)
 }
 
 enum ReaderSpeechTextExtractor {

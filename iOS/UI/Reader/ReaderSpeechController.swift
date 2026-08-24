@@ -9,7 +9,9 @@ import AVFoundation
 import AidokuRunner
 import Combine
 import CryptoKit
+import MediaPlayer
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 import ZIPFoundation
 
@@ -130,7 +132,7 @@ final class ReaderSpeechSettingsStore: ObservableObject {
 
     var isConfigured: Bool {
         switch provider {
-            case .microsoft:
+            case .microsoft, .system:
                 true
             case .local:
                 ReaderSpeechModelManager.shared.model(id: selectedModelId) != nil
@@ -139,7 +141,7 @@ final class ReaderSpeechSettingsStore: ObservableObject {
 
     var configurationMessage: String {
         switch provider {
-            case .microsoft:
+            case .microsoft, .system:
                 ""
             case .local:
                 readerSpeechLocalized(
@@ -170,6 +172,8 @@ final class ReaderSpeechSettingsStore: ObservableObject {
         switch provider {
             case .microsoft:
                 return ReaderMicrosoftSpeechEngine(voice: voice)
+            case .system:
+                throw ReaderSpeechError.systemVoiceUnavailable
             case .local:
                 guard let model = ReaderSpeechModelManager.shared.model(id: selectedModelId) else {
                     throw ReaderSpeechModelError.missingModel
@@ -211,13 +215,29 @@ final class ReaderSpeechController: NSObject, ObservableObject {
     private var units: [SpeechUnit] = []
     private var unitIndex = 0
     private var player: AVAudioPlayer?
+    private let systemSynthesizer = AVSpeechSynthesizer()
     private var synthesisTask: Task<Void, Never>?
     private var prefetchTask: Task<Void, Never>?
     private var prefetchedAudio: [Int: PrefetchedAudio] = [:]
     private var audioCache: [String: Data] = [:]
+    private var notificationObservers: [NSObjectProtocol] = []
+    private var remoteCommandTargets: [(command: MPRemoteCommand, target: Any)] = []
+    private var backgroundTask = UIBackgroundTaskIdentifier.invalid
+    private var resumeAfterInterruption = false
 
     private static let speechUnitCharacterLimit = 420
     private static let prefetchUnitCount = 3
+
+    override init() {
+        super.init()
+        systemSynthesizer.delegate = self
+        observeAudioSession()
+    }
+
+    deinit {
+        notificationObservers.forEach(NotificationCenter.default.removeObserver)
+        remoteCommandTargets.forEach { $0.command.removeTarget($0.target) }
+    }
 
     var isActive: Bool {
         switch state {
@@ -310,18 +330,27 @@ final class ReaderSpeechController: NSObject, ObservableObject {
 
     func pause() {
         guard state == .playing else { return }
-        player?.pause()
+        if systemSynthesizer.isSpeaking {
+            systemSynthesizer.pauseSpeaking(at: .immediate)
+        } else {
+            player?.pause()
+        }
         state = .paused
+        updateNowPlayingPlaybackState()
     }
 
     func resume(settings: ReaderSpeechSettingsStore) {
         guard state == .paused else { return }
-        if let player {
+        if systemSynthesizer.isPaused {
+            systemSynthesizer.continueSpeaking()
+            state = .playing
+        } else if let player {
             player.play()
             state = .playing
         } else {
             playCurrentUnit(settings: settings)
         }
+        updateNowPlayingPlaybackState()
     }
 
     func togglePlayback(
@@ -343,11 +372,14 @@ final class ReaderSpeechController: NSObject, ObservableObject {
         prefetchTask = nil
         player?.stop()
         player = nil
+        systemSynthesizer.stopSpeaking(at: .immediate)
         units = []
         prefetchedAudio = [:]
         unitIndex = 0
         progressText = ""
         state = .idle
+        endBackgroundTask()
+        clearRemoteControls()
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
@@ -374,6 +406,17 @@ final class ReaderSpeechController: NSObject, ObservableObject {
         let rate = settings.rate
         let speaker = settings.speaker
 
+        if settings.provider == .system {
+            do {
+                try beginSystemPlayback(text: unit.text, rate: rate)
+            } catch {
+                state = .failed(error.localizedDescription)
+                clearRemoteControls()
+                try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            }
+            return
+        }
+
         let engine: any ReaderSpeechEngine
         do {
             engine = try settings.makeEngine()
@@ -384,6 +427,7 @@ final class ReaderSpeechController: NSObject, ObservableObject {
         let cacheKey = "\(engine.cacheIdentifier)|\(speaker)|\(rate)|\(unit.text)"
 
         synthesisTask?.cancel()
+        beginBackgroundTask()
         synthesisTask = Task { [weak self] in
             guard let self else { return }
             do {
@@ -403,11 +447,14 @@ final class ReaderSpeechController: NSObject, ObservableObject {
                 }
                 guard !Task.isCancelled else { return }
                 try beginPlayback(data: data)
+                endBackgroundTask()
                 prefetchUpcomingUnits(after: unitIndex, settings: settings)
             } catch is CancellationError {
+                endBackgroundTask()
                 return
             } catch {
                 guard !Task.isCancelled else { return }
+                endBackgroundTask()
                 state = .failed(error.localizedDescription)
                 player = nil
                 try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -439,9 +486,7 @@ final class ReaderSpeechController: NSObject, ObservableObject {
     }
 
     private func beginPlayback(data: Data) throws {
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
-        try session.setActive(true)
+        try activateAudioSession()
 
         let player = try AVAudioPlayer(data: data)
         player.delegate = self
@@ -451,6 +496,33 @@ final class ReaderSpeechController: NSObject, ObservableObject {
             throw ReaderSpeechError.playbackFailed
         }
         state = .playing
+        activateRemoteControls()
+        updateNowPlayingInfo(duration: player.duration, elapsed: player.currentTime)
+    }
+
+    private func beginSystemPlayback(text: String, rate: Double) throws {
+        guard let voice = AVSpeechSynthesisVoice(language: "zh-CN") else {
+            throw ReaderSpeechError.systemVoiceUnavailable
+        }
+        try activateAudioSession()
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = voice
+        utterance.rate = min(
+            AVSpeechUtteranceMaximumSpeechRate,
+            max(AVSpeechUtteranceMinimumSpeechRate, AVSpeechUtteranceDefaultSpeechRate * Float(rate))
+        )
+        utterance.preUtteranceDelay = 0
+        utterance.postUtteranceDelay = 0
+        systemSynthesizer.speak(utterance)
+        state = .playing
+        activateRemoteControls()
+        updateNowPlayingInfo(duration: nil, elapsed: 0)
+    }
+
+    private func activateAudioSession() throws {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+        try session.setActive(true)
     }
 
     private func advance() {
@@ -463,10 +535,13 @@ final class ReaderSpeechController: NSObject, ObservableObject {
         player = nil
         progressText = readerSpeechLocalized("MICROSOFT_TTS_CHAPTER_FINISHED", fallback: "本章朗读完成")
         state = .idle
+        endBackgroundTask()
+        clearRemoteControls()
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     private func prefetchUpcomingUnits(after currentIndex: Int, settings: ReaderSpeechSettingsStore) {
+        guard settings.provider != .system else { return }
         let lastIndex = min(units.count - 1, currentIndex + Self.prefetchUnitCount)
         guard currentIndex < lastIndex else { return }
         let indices = Array((currentIndex + 1)...lastIndex)
@@ -555,6 +630,135 @@ final class ReaderSpeechController: NSObject, ObservableObject {
         }
         return result
     }
+
+    private func observeAudioSession() {
+        let center = NotificationCenter.default
+        notificationObservers.append(center.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor [weak self] in self?.handleAudioInterruption(notification) }
+        })
+        notificationObservers.append(center.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor [weak self] in self?.handleAudioRouteChange(notification) }
+        })
+    }
+
+    private func handleAudioInterruption(_ notification: Notification) {
+        guard
+            let rawType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+            let type = AVAudioSession.InterruptionType(rawValue: rawType)
+        else { return }
+
+        switch type {
+            case .began:
+                resumeAfterInterruption = state == .playing
+                pause()
+            case .ended:
+                let rawOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+                let shouldResume = AVAudioSession.InterruptionOptions(rawValue: rawOptions).contains(.shouldResume)
+                if resumeAfterInterruption && shouldResume {
+                    try? activateAudioSession()
+                    resume(settings: .shared)
+                }
+                resumeAfterInterruption = false
+            @unknown default:
+                break
+        }
+    }
+
+    private func handleAudioRouteChange(_ notification: Notification) {
+        guard
+            let rawReason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+            AVAudioSession.RouteChangeReason(rawValue: rawReason) == .oldDeviceUnavailable
+        else { return }
+        pause()
+    }
+
+    private func activateRemoteControls() {
+        guard remoteCommandTargets.isEmpty else {
+            updateNowPlayingPlaybackState()
+            return
+        }
+        UIApplication.shared.beginReceivingRemoteControlEvents()
+        let commands = MPRemoteCommandCenter.shared()
+        commands.playCommand.isEnabled = true
+        commands.pauseCommand.isEnabled = true
+        commands.togglePlayPauseCommand.isEnabled = true
+        commands.stopCommand.isEnabled = true
+
+        remoteCommandTargets = [
+            (commands.playCommand, commands.playCommand.addTarget { [weak self] _ in
+                Task { @MainActor [weak self] in self?.resume(settings: .shared) }
+                return .success
+            }),
+            (commands.pauseCommand, commands.pauseCommand.addTarget { [weak self] _ in
+                Task { @MainActor [weak self] in self?.pause() }
+                return .success
+            }),
+            (commands.togglePlayPauseCommand, commands.togglePlayPauseCommand.addTarget { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if state == .playing { pause() }
+                    else if state == .paused { resume(settings: .shared) }
+                }
+                return .success
+            }),
+            (commands.stopCommand, commands.stopCommand.addTarget { [weak self] _ in
+                Task { @MainActor [weak self] in self?.stop() }
+                return .success
+            })
+        ]
+        updateNowPlayingPlaybackState()
+    }
+
+    private func clearRemoteControls() {
+        remoteCommandTargets.forEach { $0.command.removeTarget($0.target) }
+        remoteCommandTargets = []
+        UIApplication.shared.endReceivingRemoteControlEvents()
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+    }
+
+    private func updateNowPlayingInfo(duration: TimeInterval?, elapsed: TimeInterval) {
+        guard units.indices.contains(unitIndex) else { return }
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: String(units[unitIndex].text.prefix(80)),
+            MPMediaItemPropertyAlbumTitle: readerSpeechLocalized("MICROSOFT_TTS_TITLE", fallback: "语音读书"),
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,
+            MPNowPlayingInfoPropertyPlaybackRate: state == .playing ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0
+        ]
+        if let duration { info[MPMediaItemPropertyPlaybackDuration] = duration }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    private func updateNowPlayingPlaybackState() {
+        var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+        if let player {
+            info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = player.currentTime
+            info[MPMediaItemPropertyPlaybackDuration] = player.duration
+        }
+        info[MPNowPlayingInfoPropertyPlaybackRate] = state == .playing ? 1.0 : 0.0
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    private func beginBackgroundTask() {
+        endBackgroundTask()
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Reader speech synthesis") { [weak self] in
+            Task { @MainActor [weak self] in self?.endBackgroundTask() }
+        }
+    }
+
+    private func endBackgroundTask() {
+        guard backgroundTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTask)
+        backgroundTask = .invalid
+    }
 }
 
 extension ReaderSpeechController: AVAudioPlayerDelegate {
@@ -567,6 +771,15 @@ extension ReaderSpeechController: AVAudioPlayerDelegate {
                 state = .failed(ReaderSpeechError.playbackFailed.localizedDescription)
             }
         }
+    }
+}
+
+extension ReaderSpeechController: AVSpeechSynthesizerDelegate {
+    nonisolated func speechSynthesizer(
+        _ synthesizer: AVSpeechSynthesizer,
+        didFinish utterance: AVSpeechUtterance
+    ) {
+        Task { @MainActor [weak self] in self?.advance() }
     }
 }
 
@@ -733,6 +946,7 @@ enum MicrosoftSpeechService {
 enum ReaderSpeechError: LocalizedError {
     case invalidResponse
     case playbackFailed
+    case systemVoiceUnavailable
     case freeServiceUnavailable(detail: String?)
 
     var errorDescription: String? {
@@ -741,6 +955,8 @@ enum ReaderSpeechError: LocalizedError {
                 return readerSpeechLocalized("MICROSOFT_TTS_INVALID_RESPONSE", fallback: "微软语音返回了无效音频。")
             case .playbackFailed:
                 return readerSpeechLocalized("MICROSOFT_TTS_PLAYBACK_FAILED", fallback: "语音播放失败。")
+            case .systemVoiceUnavailable:
+                return readerSpeechLocalized("READER_TTS_SYSTEM_UNAVAILABLE", fallback: "当前设备没有可用的中文系统语音。")
             case let .freeServiceUnavailable(detail):
                 let message = readerSpeechLocalized(
                     "MICROSOFT_TTS_FREE_UNAVAILABLE",
@@ -775,8 +991,10 @@ struct ReaderSpeechControlView: View {
 
                 if settings.provider == .microsoft {
                     microsoftOnlineSettings
-                } else {
+                } else if settings.provider == .local {
                     localModelSettings
+                } else {
+                    systemVoiceSettings
                 }
 
                 Section {
@@ -786,7 +1004,7 @@ struct ReaderSpeechControlView: View {
                                 Text(voice.title).tag(voice)
                             }
                         }
-                    } else if
+                    } else if settings.provider == .local,
                        let model = modelManager.model(id: settings.selectedModelId),
                        model.speakerCount > 1 {
                         Stepper(
@@ -855,7 +1073,7 @@ struct ReaderSpeechControlView: View {
                 } footer: {
                     Text(readerSpeechLocalized(
                         "MICROSOFT_TTS_FOREGROUND_ONLY",
-                        fallback: "当前稳定版只支持前台播放，并从当前文字位置朗读到本章末尾。"
+                        fallback: "支持锁屏、切换应用和耳机播放控制，并从当前文字位置连续朗读。"
                     ))
                 }
             }
@@ -897,6 +1115,22 @@ struct ReaderSpeechControlView: View {
             Text(readerSpeechLocalized(
                 "MICROSOFT_TTS_FREE_INFO",
                 fallback: "正文会发送到微软 Edge 在线朗读服务生成语音；该免费接口可能随微软调整而变化。"
+            ))
+        }
+    }
+
+    private var systemVoiceSettings: some View {
+        Section {
+            Label(
+                readerSpeechLocalized("READER_TTS_SYSTEM_READY", fallback: "使用 iPhone 已安装的中文语音，无需联网"),
+                systemImage: "iphone.and.arrow.forward"
+            )
+        } header: {
+            Text(readerSpeechLocalized("READER_TTS_SYSTEM_TITLE", fallback: "苹果系统语音"))
+        } footer: {
+            Text(readerSpeechLocalized(
+                "READER_TTS_SYSTEM_INFO",
+                fallback: "系统语音用于网络不可用时的离线保底，音色由 iOS 的语音设置决定。"
             ))
         }
     }

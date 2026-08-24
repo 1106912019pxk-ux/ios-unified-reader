@@ -12,6 +12,7 @@ import ZIPFoundation
 
 enum ReaderSpeechProvider: String, CaseIterable, Identifiable, Sendable {
     case microsoft
+    case system
     case local
 
     var id: String { rawValue }
@@ -19,6 +20,7 @@ enum ReaderSpeechProvider: String, CaseIterable, Identifiable, Sendable {
     var title: String {
         switch self {
             case .microsoft: readerSpeechLocalized("READER_TTS_PROVIDER_MICROSOFT", fallback: "微软免费在线语音")
+            case .system: readerSpeechLocalized("READER_TTS_PROVIDER_SYSTEM", fallback: "苹果系统语音（离线保底）")
             case .local: readerSpeechLocalized("READER_TTS_PROVIDER_LOCAL", fallback: "本地离线模型")
         }
     }

@@ -858,7 +858,10 @@ extension ReaderPagedTextViewController: ReaderSpeechTextProviding {
                 id: "\(chapterKey)|\(index)",
                 chapterKey: chapterKey,
                 pageIndex: index,
-                text: page.markdownContent
+                // Speak the exact attributed text rendered on this page. The
+                // source Markdown and rendered text do not share character
+                // offsets after headings, links and images are transformed.
+                text: page.attributedContent.string
             )
         }
     }

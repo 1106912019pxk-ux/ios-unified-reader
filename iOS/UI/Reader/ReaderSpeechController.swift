@@ -224,12 +224,14 @@ final class ReaderSpeechController: NSObject, ObservableObject {
     private var remoteCommandTargets: [(command: MPRemoteCommand, target: Any)] = []
     private var backgroundTask = UIBackgroundTaskIdentifier.invalid
     private var resumeAfterInterruption = false
+    private var pauseRequested = false
 
     private static let speechUnitCharacterLimit = 420
     private static let prefetchUnitCount = 3
 
     override init() {
         super.init()
+        systemSynthesizer.usesApplicationAudioSession = true
         systemSynthesizer.delegate = self
         observeAudioSession()
     }
@@ -329,7 +331,8 @@ final class ReaderSpeechController: NSObject, ObservableObject {
     }
 
     func pause() {
-        guard state == .playing else { return }
+        guard state == .playing || state == .loading else { return }
+        pauseRequested = true
         if systemSynthesizer.isSpeaking {
             systemSynthesizer.pauseSpeaking(at: .immediate)
         } else {
@@ -341,12 +344,30 @@ final class ReaderSpeechController: NSObject, ObservableObject {
 
     func resume(settings: ReaderSpeechSettingsStore) {
         guard state == .paused else { return }
+        pauseRequested = false
+        do {
+            try activateAudioSession()
+        } catch {
+            state = .failed(error.localizedDescription)
+            clearRemoteControls()
+            return
+        }
         if systemSynthesizer.isPaused {
             systemSynthesizer.continueSpeaking()
             state = .playing
         } else if let player {
-            player.play()
-            state = .playing
+            if player.play() {
+                state = .playing
+            } else {
+                state = .failed(ReaderSpeechError.playbackFailed.localizedDescription)
+                clearRemoteControls()
+                try? AVAudioSession.sharedInstance().setActive(
+                    false,
+                    options: .notifyOthersOnDeactivation
+                )
+            }
+        } else if synthesisTask != nil {
+            state = .loading
         } else {
             playCurrentUnit(settings: settings)
         }
@@ -373,6 +394,7 @@ final class ReaderSpeechController: NSObject, ObservableObject {
         player?.stop()
         player = nil
         systemSynthesizer.stopSpeaking(at: .immediate)
+        pauseRequested = false
         units = []
         prefetchedAudio = [:]
         unitIndex = 0
@@ -494,11 +516,15 @@ final class ReaderSpeechController: NSObject, ObservableObject {
         player.delegate = self
         player.prepareToPlay()
         self.player = player
-        guard player.play() else {
-            throw ReaderSpeechError.playbackFailed
-        }
-        state = .playing
         activateRemoteControls()
+        if pauseRequested {
+            state = .paused
+        } else {
+            guard player.play() else {
+                throw ReaderSpeechError.playbackFailed
+            }
+            state = .playing
+        }
         updateNowPlayingInfo(duration: player.duration, elapsed: player.currentTime)
     }
 
@@ -523,8 +549,13 @@ final class ReaderSpeechController: NSObject, ObservableObject {
 
     private func activateAudioSession() throws {
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
-        try session.setActive(true)
+        try session.setCategory(
+            .playback,
+            mode: .spokenAudio,
+            policy: .longFormAudio,
+            options: []
+        )
+        try session.setActive(true, options: [])
     }
 
     private func advance() {
@@ -693,6 +724,11 @@ final class ReaderSpeechController: NSObject, ObservableObject {
         commands.pauseCommand.isEnabled = true
         commands.togglePlayPauseCommand.isEnabled = true
         commands.stopCommand.isEnabled = true
+        commands.nextTrackCommand.isEnabled = false
+        commands.previousTrackCommand.isEnabled = false
+        commands.skipForwardCommand.isEnabled = false
+        commands.skipBackwardCommand.isEnabled = false
+        commands.changePlaybackPositionCommand.isEnabled = false
 
         remoteCommandTargets = [
             (commands.playCommand, commands.playCommand.addTarget { [weak self] _ in
@@ -722,21 +758,33 @@ final class ReaderSpeechController: NSObject, ObservableObject {
     private func clearRemoteControls() {
         remoteCommandTargets.forEach { $0.command.removeTarget($0.target) }
         remoteCommandTargets = []
+        let commands = MPRemoteCommandCenter.shared()
+        commands.playCommand.isEnabled = false
+        commands.pauseCommand.isEnabled = false
+        commands.togglePlayPauseCommand.isEnabled = false
+        commands.stopCommand.isEnabled = false
         UIApplication.shared.endReceivingRemoteControlEvents()
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        let center = MPNowPlayingInfoCenter.default()
+        center.playbackState = .stopped
+        center.nowPlayingInfo = nil
     }
 
     private func updateNowPlayingInfo(duration: TimeInterval?, elapsed: TimeInterval) {
         guard units.indices.contains(unitIndex) else { return }
         var info: [String: Any] = [
-            MPMediaItemPropertyTitle: String(units[unitIndex].text.prefix(80)),
-            MPMediaItemPropertyAlbumTitle: readerSpeechLocalized("MICROSOFT_TTS_TITLE", fallback: "语音读书"),
+            MPMediaItemPropertyTitle: readerSpeechLocalized("MICROSOFT_TTS_TITLE", fallback: "语音读书"),
+            MPMediaItemPropertyArtist: String(units[unitIndex].text.prefix(80)),
+            MPMediaItemPropertyAlbumTitle: "Aidoku",
+            MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
+            MPNowPlayingInfoPropertyIsLiveStream: false,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,
-            MPNowPlayingInfoPropertyPlaybackRate: state == .playing ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyPlaybackRate: nowPlayingPlaybackRate,
             MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0
         ]
         if let duration { info[MPMediaItemPropertyPlaybackDuration] = duration }
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        let center = MPNowPlayingInfoCenter.default()
+        center.nowPlayingInfo = info
+        center.playbackState = nowPlayingPlaybackState
     }
 
     private func updateNowPlayingPlaybackState() {
@@ -745,8 +793,34 @@ final class ReaderSpeechController: NSObject, ObservableObject {
             info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = player.currentTime
             info[MPMediaItemPropertyPlaybackDuration] = player.duration
         }
-        info[MPNowPlayingInfoPropertyPlaybackRate] = state == .playing ? 1.0 : 0.0
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        info[MPNowPlayingInfoPropertyPlaybackRate] = nowPlayingPlaybackRate
+        let center = MPNowPlayingInfoCenter.default()
+        center.nowPlayingInfo = info
+        center.playbackState = nowPlayingPlaybackState
+    }
+
+    private var nowPlayingPlaybackState: MPNowPlayingPlaybackState {
+        switch state {
+            case .playing:
+                .playing
+            case .loading:
+                pauseRequested ? .paused : .playing
+            case .paused:
+                .paused
+            case .idle, .failed:
+                .stopped
+        }
+    }
+
+    private var nowPlayingPlaybackRate: Double {
+        switch state {
+            case .playing:
+                1.0
+            case .loading:
+                pauseRequested ? 0.0 : 1.0
+            case .paused, .idle, .failed:
+                0.0
+        }
     }
 
     private func beginBackgroundTask() {

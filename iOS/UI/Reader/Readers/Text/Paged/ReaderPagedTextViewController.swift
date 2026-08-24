@@ -830,12 +830,6 @@ extension ReaderPagedTextViewController: ReaderReaderDelegate {
 // MARK: - Microsoft Speech
 
 extension ReaderPagedTextViewController: ReaderSpeechTextProviding {
-    func setSpeechNavigationLocked(_ locked: Bool) {
-        pageViewController.view.subviews
-            .compactMap { $0 as? UIScrollView }
-            .forEach { $0.isScrollEnabled = !locked }
-    }
-
     func speechSegmentsFromCurrentPosition() -> [ReaderSpeechSegment] {
         guard !pages.isEmpty, let chapterKey = chapter?.key else { return [] }
         // Use the page that is actually on screen. `currentPageIndex` is also

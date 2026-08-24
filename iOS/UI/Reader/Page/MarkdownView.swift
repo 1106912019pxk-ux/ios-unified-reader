@@ -173,6 +173,7 @@ struct MarkdownView: View {
             }
         )
         .foregroundStyle(Color(uiColor: theme.foregroundColor))
+        .textSelection(.enabled)
         .padding(.horizontal, horizontalPadding)
         .padding(.top, topPadding)
         .padding(.bottom, bottomPadding)

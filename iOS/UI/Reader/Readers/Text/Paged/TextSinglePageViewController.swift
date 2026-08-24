@@ -12,8 +12,9 @@ class TextSinglePageViewController: UIViewController {
     private lazy var textView: UITextView = {
         let tv = UITextView()
         tv.isEditable = false
+        tv.isSelectable = true
         tv.isScrollEnabled = false
-        tv.isUserInteractionEnabled = false  // Let taps pass through to parent tap zones
+        tv.isUserInteractionEnabled = true
         tv.backgroundColor = TextReaderTheme.current.backgroundColor
         tv.font = .systemFont(ofSize: 18)
         return tv

@@ -61,7 +61,7 @@ class ReaderTextViewController: BaseViewController {
     private var lastReportedPage = 0
     private var needsPageCountUpdate = false
 
-    private let autoScrollBasePointsPerSecond: CGFloat = 28
+    private let autoScrollBasePointsPerSecond: CGFloat = 56
     private var autoScrollDisplayLink: CADisplayLink?
     private var autoScrollDisplayLinkProxy: ReaderTextAutoScrollDisplayLinkProxy?
     private var autoScrollLastTimestamp: CFTimeInterval = 0

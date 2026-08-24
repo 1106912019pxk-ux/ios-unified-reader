@@ -62,7 +62,7 @@ class ReaderWebtoonViewController: ZoomableCollectionViewController {
     // Stores the last calculated page number
     private var previousPage = 0
 
-    private let autoScrollBasePointsPerSecond: CGFloat = 28
+    private let autoScrollBasePointsPerSecond: CGFloat = 56
     private var autoScrollDisplayLink: CADisplayLink?
     private var autoScrollDisplayLinkProxy: ReaderWebtoonAutoScrollDisplayLinkProxy?
     private var autoScrollLastTimestamp: CFTimeInterval = 0

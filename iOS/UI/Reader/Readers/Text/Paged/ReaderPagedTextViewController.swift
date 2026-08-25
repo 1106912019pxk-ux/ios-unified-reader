@@ -866,9 +866,47 @@ extension ReaderPagedTextViewController: ReaderSpeechTextProviding {
         }
     }
 
-    func revealSpeechSegment(_ segment: ReaderSpeechSegment) {
-        guard segment.chapterKey == chapter?.key, pages.indices.contains(segment.pageIndex) else { return }
+    func prepareSpeechSegments(for chapter: AidokuRunner.Chapter) async -> [ReaderSpeechSegment] {
+        await viewModel.preload(chapter: chapter)
+        guard
+            viewModel.preloadedChapter == chapter,
+            viewModel.preloadedPages.allSatisfy({ $0.isTextPage }),
+            let firstPage = viewModel.preloadedPages.first,
+            let markdown = ReaderSpeechTextExtractor.text(from: firstPage),
+            !markdown.isEmpty
+        else {
+            return []
+        }
+
+        view.layoutIfNeeded()
+        let windowSafeArea = view.window?.safeAreaInsets ?? view.safeAreaInsets
+        let safeWidth = view.bounds.width - windowSafeArea.left - windowSafeArea.right
+        let safeHeight = view.bounds.height
+            - windowSafeArea.top
+            - windowSafeArea.bottom
+            - topStatusReserve
+            - bottomStatusReserve
+        guard safeWidth > 0, safeHeight > 0 else { return [] }
+
+        let pageSize = CGSize(
+            width: usesDoublePages ? safeWidth / 2 : safeWidth,
+            height: safeHeight
+        )
+        return paginator.paginate(markdown: markdown, pageSize: pageSize).map { page in
+            ReaderSpeechSegment(
+                id: "\(chapter.key)|\(page.id)",
+                chapterKey: chapter.key,
+                pageIndex: page.id,
+                text: page.attributedContent.string
+            )
+        }
+    }
+
+    @discardableResult
+    func revealSpeechSegment(_ segment: ReaderSpeechSegment) -> Bool {
+        guard segment.chapterKey == chapter?.key, pages.indices.contains(segment.pageIndex) else { return false }
         move(toPage: segment.pageIndex, animated: false)
+        return true
     }
 }
 

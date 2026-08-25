@@ -25,8 +25,15 @@ struct ReaderSpeechSegment: Identifiable, Sendable {
 @MainActor
 protocol ReaderSpeechTextProviding: AnyObject {
     func speechSegmentsFromCurrentPosition() -> [ReaderSpeechSegment]
-    func revealSpeechSegment(_ segment: ReaderSpeechSegment)
+    func prepareSpeechSegments(for chapter: AidokuRunner.Chapter) async -> [ReaderSpeechSegment]
+    @discardableResult func revealSpeechSegment(_ segment: ReaderSpeechSegment) -> Bool
     func setSpeechNavigationLocked(_ locked: Bool)
+}
+
+extension ReaderSpeechTextProviding {
+    func prepareSpeechSegments(for chapter: AidokuRunner.Chapter) async -> [ReaderSpeechSegment] {
+        []
+    }
 }
 
 enum ReaderSpeechTextExtractor {
@@ -246,6 +253,11 @@ final class ReaderSpeechController: NSObject, ObservableObject {
             case .idle, .failed: false
             case .loading, .playing, .paused: true
         }
+    }
+
+    var currentSegment: ReaderSpeechSegment? {
+        guard units.indices.contains(unitIndex) else { return nil }
+        return units[unitIndex].segment
     }
 
     func start(segments: [ReaderSpeechSegment], settings: ReaderSpeechSettingsStore) {
@@ -494,10 +506,14 @@ final class ReaderSpeechController: NSObject, ObservableObject {
         state = .loading
         progressText = readerSpeechLocalized("MICROSOFT_TTS_LOADING_NEXT", fallback: "正在读取下一章")
         synthesisTask?.cancel()
+        beginBackgroundTask()
         synthesisTask = Task { [weak self] in
             guard let self else { return }
             let segments = await loadMoreSegments(chapterKey)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else {
+                endBackgroundTask()
+                return
+            }
             let additionalUnits = Self.speechUnits(from: segments)
             guard !additionalUnits.isEmpty else {
                 finish()
@@ -505,6 +521,7 @@ final class ReaderSpeechController: NSObject, ObservableObject {
             }
             units.append(contentsOf: additionalUnits)
             synthesisTask = nil
+            endBackgroundTask()
             playCurrentUnit(settings: settings)
         }
     }

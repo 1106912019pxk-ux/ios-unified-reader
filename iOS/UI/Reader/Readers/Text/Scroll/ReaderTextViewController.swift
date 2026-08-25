@@ -967,12 +967,13 @@ extension ReaderTextViewController: ReaderSpeechTextProviding {
         }
     }
 
-    func revealSpeechSegment(_ segment: ReaderSpeechSegment) {
+    @discardableResult
+    func revealSpeechSegment(_ segment: ReaderSpeechSegment) -> Bool {
         guard
             let sectionIndex = sections.firstIndex(where: { $0.chapter.key == segment.chapterKey }),
             sections[sectionIndex].hostingControllers.indices.contains(segment.pageIndex)
         else {
-            return
+            return false
         }
 
         var targetY = sectionContentStartY(at: sectionIndex)
@@ -981,6 +982,7 @@ extension ReaderTextViewController: ReaderSpeechTextProviding {
         }
         let minimumY = -scrollView.adjustedContentInset.top
         scrollView.setContentOffset(CGPoint(x: 0, y: max(minimumY, targetY)), animated: false)
+        return true
     }
 }
 

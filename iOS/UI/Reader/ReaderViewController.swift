@@ -399,6 +399,9 @@ class ReaderViewController: BaseObservingViewController {
                 self.sessionStartDate = Date.now
                 self.sessionLastInteraction = nil
             }
+            if self.speechController.isActive, let segment = self.speechController.currentSegment {
+                self.revealSpeechSegment(segment)
+            }
         }
         if #available(iOS 26.0, *) {
             addObserver(forName: UIScene.willEnterForegroundNotification) { [weak self] _ in
@@ -718,6 +721,10 @@ class ReaderViewController: BaseObservingViewController {
         for index in stride(from: startIndex, through: 0, by: -1) {
             let candidate = chapterList[index]
             guard candidate.key.lowercased().contains(".epub/") else { break }
+            if let provider = reader as? ReaderSpeechTextProviding {
+                let preparedSegments = await provider.prepareSpeechSegments(for: candidate)
+                if !preparedSegments.isEmpty { return preparedSegments }
+            }
             let pages = await LocalFileManager.shared.fetchPages(
                 mangaId: manga.key,
                 chapterId: candidate.key
@@ -739,7 +746,14 @@ class ReaderViewController: BaseObservingViewController {
 
     private func revealSpeechSegment(_ segment: ReaderSpeechSegment) {
         if segment.chapterKey == chapter.key {
-            (reader as? ReaderSpeechTextProviding)?.revealSpeechSegment(segment)
+            guard
+                let provider = reader as? ReaderSpeechTextProviding,
+                provider.revealSpeechSegment(segment)
+            else {
+                pendingSpeechSegment = segment
+                return
+            }
+            pendingSpeechSegment = nil
             return
         }
         guard let target = chapterList.first(where: { $0.key == segment.chapterKey }) else { return }
@@ -756,8 +770,9 @@ class ReaderViewController: BaseObservingViewController {
             segment.chapterKey == chapter.key,
             let provider = reader as? ReaderSpeechTextProviding
         else { return }
-        pendingSpeechSegment = nil
-        provider.revealSpeechSegment(segment)
+        if provider.revealSpeechSegment(segment) {
+            pendingSpeechSegment = nil
+        }
     }
 
     @objc func sliderMoved(_ sender: ReaderSliderView) {

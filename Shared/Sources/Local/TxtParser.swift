@@ -310,13 +310,14 @@ private extension TxtParser {
 
         var chapters: [TxtChapterIndex.Chapter] = []
         let firstHeadingOffset = headings[0].offset
-        let prefixHasContent: Bool = if firstHeadingOffset > 0 {
+        let prefixHasContent: Bool
+        if firstHeadingOffset > 0 {
             let prefix = Data(text.utf8).prefix(Int(firstHeadingOffset))
-            String(decoding: prefix, as: UTF8.self)
+            prefixHasContent = String(decoding: prefix, as: UTF8.self)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .isEmpty == false
         } else {
-            false
+            prefixHasContent = false
         }
         if prefixHasContent {
             chapters.append(.init(

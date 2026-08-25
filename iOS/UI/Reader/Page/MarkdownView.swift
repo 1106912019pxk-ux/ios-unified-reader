@@ -150,10 +150,14 @@ struct MarkdownView: View {
     }
 
     private var textFont: Font {
-        if fontFamily == "System" {
+        guard let name = TextReaderFontResolver.resolvedName(for: fontFamily) else {
             return .system(size: fontSize)
         }
-        return .custom(fontFamily, size: fontSize)
+        return .custom(name, size: fontSize)
+    }
+
+    private var resolvedFontFamily: String {
+        TextReaderFontResolver.resolvedName(for: fontFamily) ?? ".AppleSystemUIFont"
     }
 
     var body: some View {
@@ -162,7 +166,7 @@ struct MarkdownView: View {
         }
         .markdownImageProvider(LocalFileImageProvider())
         .markdownTextStyle {
-            FontFamily(.custom(fontFamily == "System" ? ".AppleSystemUIFont" : fontFamily))
+            FontFamily(.custom(resolvedFontFamily))
             FontSize(fontSize)
         }
         .markdownBlockStyle(\.paragraph) { configuration in

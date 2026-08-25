@@ -9,6 +9,43 @@
 
 import UIKit
 
+/// Resolves the value stored by the font picker to a concrete font face.
+/// UIKit's picker exposes family names, while `UIFont(name:size:)` expects a
+/// PostScript face name for many fonts (notably the CJK system families).
+enum TextReaderFontResolver {
+    static func resolvedName(for selection: String) -> String? {
+        guard selection != "System", selection != "San Francisco" else { return nil }
+        if UIFont(name: selection, size: 16) != nil {
+            return selection
+        }
+
+        let names = UIFont.fontNames(forFamilyName: selection)
+        guard !names.isEmpty else { return nil }
+        let preferredSuffixes = ["-regular", " regular", "-roman", " roman", "-book", " book"]
+        if let regular = names.first(where: { name in
+            preferredSuffixes.contains { name.lowercased().hasSuffix($0) }
+        }) {
+            return regular
+        }
+
+        let styledTokens = ["bold", "italic", "oblique", "semibold", "heavy", "black", "light", "thin"]
+        return names.first(where: { name in
+            let lowercased = name.lowercased()
+            return !styledTokens.contains { lowercased.contains($0) }
+        }) ?? names[0]
+    }
+
+    static func font(for selection: String, size: CGFloat, bold: Bool = false) -> UIFont {
+        guard let name = resolvedName(for: selection), let baseFont = UIFont(name: name, size: size) else {
+            return UIFont.systemFont(ofSize: size, weight: bold ? .bold : .regular)
+        }
+        guard bold, let descriptor = baseFont.fontDescriptor.withSymbolicTraits(.traitBold) else {
+            return baseFont
+        }
+        return UIFont(descriptor: descriptor, size: size)
+    }
+}
+
 /// Represents a single page of paginated text
 struct TextPage: Identifiable, Equatable {
     let id: Int
@@ -34,10 +71,7 @@ struct PaginationConfig {
     var theme: TextReaderTheme = .current
 
     var font: UIFont {
-        if fontName == "San Francisco" || fontName == "System" {
-            return UIFont.systemFont(ofSize: fontSize)
-        }
-        return UIFont(name: fontName, size: fontSize) ?? UIFont.systemFont(ofSize: fontSize)
+        TextReaderFontResolver.font(for: fontName, size: fontSize)
     }
 
     var paragraphStyle: NSParagraphStyle {
@@ -230,16 +264,11 @@ class TextPaginator {
         }
 
         let headerFontSize = config.fontSize * sizeMultiplier
-        var headerFont: UIFont
-        if config.fontName == "San Francisco" || config.fontName == "System" {
-            headerFont = UIFont.systemFont(ofSize: headerFontSize, weight: .bold)
-        } else {
-            headerFont = UIFont(name: config.fontName, size: headerFontSize)
-                ?? UIFont.systemFont(ofSize: headerFontSize)
-            if let boldDescriptor = headerFont.fontDescriptor.withSymbolicTraits(.traitBold) {
-                headerFont = UIFont(descriptor: boldDescriptor, size: headerFontSize)
-            }
-        }
+        let headerFont = TextReaderFontResolver.font(
+            for: config.fontName,
+            size: headerFontSize,
+            bold: true
+        )
 
         let style = NSMutableParagraphStyle()
         style.lineSpacing = config.lineSpacing
